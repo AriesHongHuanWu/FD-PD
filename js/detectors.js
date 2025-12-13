@@ -18,7 +18,7 @@ let fallFrameCount = 0;
 let lowVisibilityFrameCount = 0;
 let currentEnvRisk = 0;
 
-const FALL_TRIGGER_FRAMES = 10;
+const FALL_TRIGGER_FRAMES = 60; // ~2 seconds @ 30fps
 const VISIBILITY_THRESHOLD = 0.6;
 
 export const Detectors = {
@@ -75,10 +75,10 @@ export const Detectors = {
             if (visibility < VISIBILITY_THRESHOLD) {
                 lowVisibilityFrameCount++;
                 if (lowVisibilityFrameCount > 5) {
-                    UI.updateStatus('Camera Blocked', 'warning');
+                    UI.updateStatus('Camera Blocked / Too Close', 'warning');
+                    // Safety Gate: Force Safe Metrics
+                    UI.updateTelemetry({ risk: 0, stability: 100, envRisk: 0, spine: 'Unknown' });
                 }
-                // Degrade functionality but keep showing what we can?
-                // For now, allow partial analysis with penalty
             } else {
                 lowVisibilityFrameCount = 0;
                 UI.updateStatus('Active', 'success');
@@ -89,6 +89,7 @@ export const Detectors = {
             lowVisibilityFrameCount++;
             // Reset metrics if no person
             UI.updateTelemetry({ risk: 0, stability: 0, envRisk: 0, spine: 'Good' });
+            fallFrameCount = 0; // Reset fall timer if person lost
         }
 
         const isFalling = fallFrameCount >= FALL_TRIGGER_FRAMES;
@@ -96,25 +97,54 @@ export const Detectors = {
     },
 
     checkVisibility(landmarks) {
-        const indices = [23, 24, 25, 26, 27, 28]; // Lower body
+        const indices = [11, 12, 23, 24, 25, 26, 27, 28]; // Shoulders + Lower body
         let totalVis = 0;
         indices.forEach(i => totalVis += landmarks[i].visibility);
         return totalVis / indices.length;
     },
 
     analyzePose(landmarks, worldLandmarks, visibility) {
-        if (visibility < 0.3) return;
+        // Strict Visibility Gate
+        if (visibility < VISIBILITY_THRESHOLD) {
+            // Do not analyze if visibility is poor to avoid false positives
+            return;
+        }
 
         // 1. Hand Support
         const handSupport = this.checkHandSupport(landmarks);
         UI.toggleHandSupport(handSupport);
 
-        // 2. Knee Pressure
+        // 2. Knee Pressure with Weight Bearing Check
         const leftKneeAngle = this.calculateAngle(landmarks[23], landmarks[25], landmarks[27]);
         const rightKneeAngle = this.calculateAngle(landmarks[24], landmarks[26], landmarks[28]);
-        let modifier = handSupport ? 25 : 0;
-        const minAngle = Math.min(leftKneeAngle, rightKneeAngle);
-        const effectiveAngle = Math.min(180, minAngle + modifier);
+
+        // Weight Bearing Logic: Compare Ankle Y levels.
+        // Y increases downwards. Higher Y = Lower on screen (Grounded).
+        const leftAnkleY = landmarks[27].y;
+        const rightAnkleY = landmarks[28].y;
+        const ankleDiff = Math.abs(leftAnkleY - rightAnkleY);
+
+        // If diff > 0.05 (approx 5% screen height), one leg is lifted.
+        const isLeftLifted = (leftAnkleY < rightAnkleY - 0.05);
+        const isRightLifted = (rightAnkleY < leftAnkleY - 0.05);
+
+        let effectiveAngle = 180;
+
+        // Only calculate pressure for the leg that is bearing weight
+        if (isLeftLifted) {
+            // Left lifted, check right only
+            effectiveAngle = rightKneeAngle;
+        } else if (isRightLifted) {
+            // Right lifted, check left only
+            effectiveAngle = leftKneeAngle;
+        } else {
+            // Both grounded, take max load (min angle)
+            effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
+        }
+
+        let modifier = handSupport ? 30 : 0;
+        effectiveAngle = Math.min(180, effectiveAngle + modifier);
+
         UI.updateKneePressure(effectiveAngle);
 
         // 3. New Metrics Calculations
@@ -150,15 +180,19 @@ export const Detectors = {
             Logger.add('warning', 'High Fall Risk', `Risk Index: ${Math.round(riskIndex)}%`);
         }
 
-        // 5. Fall Detection
+        // 5. Fall Detection (Requires persistence)
         const isFallen = this.checkFall(landmarks);
+
+        // Require strictly high risk OR geometric fall for sustained time
         if (isFallen || riskIndex >= 95) {
             fallFrameCount++;
-            if (fallFrameCount === FALL_TRIGGER_FRAMES) {
+            if (fallFrameCount === FALL_TRIGGER_FRAMES) { // Trigger AFTER ~2 seconds
                 Logger.add('error', 'FALL DETECTED', `Risk: ${Math.round(riskIndex)}%`);
                 UI.toggleFallOverlay(true);
             }
         } else {
+            // Decay frame count slowly instead of instant reset to handle flicker? 
+            // Or instant reset for strictness? Instant is better for ensuring 2s CONTINUOUS fall.
             fallFrameCount = 0;
         }
 
