@@ -1,0 +1,11 @@
+{
+    "name": "fallguard-pro",
+    "version": "2.0.0",
+    "description": "AI FallGuard Pro - Static Build",
+    "scripts": {
+        "build": "node build.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "MIT"
+}
