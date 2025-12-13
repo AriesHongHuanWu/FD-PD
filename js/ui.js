@@ -16,7 +16,16 @@ export const UI = {
         eventLog: document.getElementById('event-log-container'),
         obstacleAlert: document.getElementById('obstacle-alert'),
         fallOverlay: document.getElementById('fall-overlay'),
-        threeContainer: document.getElementById('three-container')
+        threeContainer: document.getElementById('three-container'),
+        // Telemetry
+        riskCircle: document.getElementById('risk-circle'),
+        riskValue: document.getElementById('risk-value'),
+        riskBadge: document.getElementById('risk-badge'),
+        stabilityBar: document.getElementById('stability-bar'),
+        stabilityText: document.getElementById('stability-text'),
+        envBar: document.getElementById('env-bar'),
+        envText: document.getElementById('env-text'),
+        spineStatus: document.getElementById('spine-status')
     },
 
     updateStatus(status, type = 'normal') {
@@ -90,6 +99,53 @@ export const UI = {
 
     updatePrediction(text) {
         this.elements.predictionText.textContent = text;
+    },
+
+    updateTelemetry(data) {
+        // data: { risk: 0-100, stability: 0-100, envRisk: 0-100, spine: 'Good'|'Poor' }
+
+        // Update Risk Circle (DashOffset: 226 = 0%, 0 = 100%)
+        const offset = 226 - (data.risk / 100 * 226);
+        this.elements.riskCircle.style.strokeDashoffset = offset;
+        this.elements.riskValue.textContent = `${Math.round(data.risk)}%`;
+
+        // Risk Badge
+        const badge = this.elements.riskBadge;
+        if (data.risk > 70) {
+            badge.className = 'px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold';
+            badge.textContent = 'CRITICAL';
+            this.elements.riskCircle.setAttribute('stroke', '#ef4444'); // Red
+        } else if (data.risk > 40) {
+            badge.className = 'px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 text-xs font-bold';
+            badge.textContent = 'WARNING';
+            this.elements.riskCircle.setAttribute('stroke', '#f59e0b'); // Yellow
+        } else {
+            badge.className = 'px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold';
+            badge.textContent = 'LOW RISK';
+            this.elements.riskCircle.setAttribute('stroke', '#22c55e'); // Green
+        }
+
+        // Stability
+        this.elements.stabilityBar.style.width = `${data.stability}%`;
+        this.elements.stabilityText.textContent = `${Math.round(data.stability)}%`;
+        this.elements.stabilityBar.className = `h-full transition-all duration-300 ${data.stability < 50 ? 'bg-red-500' : 'bg-blue-500'}`;
+
+        // Environment
+        this.elements.envBar.style.width = `${data.envRisk}%`;
+        if (data.envRisk === 0) {
+            this.elements.envText.textContent = "Safe";
+            this.elements.envBar.className = "h-full bg-gray-300";
+        } else {
+            this.elements.envText.textContent = "Hazard";
+            this.elements.envBar.className = "h-full bg-orange-500";
+        }
+
+        // Spine
+        if (data.spine === 'Poor') {
+            this.elements.spineStatus.innerHTML = `<span class="material-symbols-outlined text-red-500 text-base">warning</span> Bad Posture`;
+        } else {
+            this.elements.spineStatus.innerHTML = `<span class="material-symbols-outlined text-green-500 text-base">straight</span> Good`;
+        }
     },
 
     toggleHandSupport(active) {

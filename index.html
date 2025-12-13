@@ -99,66 +99,103 @@
         </section>
 
         <!-- Right Column: Analytics & 3D -->
-        <section class="lg:col-span-4 flex flex-col gap-4 h-full">
+        <section class="lg:col-span-4 flex flex-col gap-4 h-full overflow-y-auto no-scrollbar pb-20 md:pb-0">
 
-            <!-- Biomechanics Card -->
-            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 flex flex-col gap-4">
-                <div class="flex items-center justify-between">
+            <!-- Real-time Telemetry Card -->
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-gray-100 pb-3">
                     <h3 class="text-lg font-medium text-gray-800 flex items-center gap-2">
-                        <span class="material-symbols-outlined text-blue-500">accessibility_new</span> Biomechanics
+                        <span class="material-symbols-outlined text-indigo-500">monitoring</span> Telemetry
                     </h3>
-                </div>
-
-                <!-- Knee Pressure Meter -->
-                <div class="space-y-2">
-                    <div class="flex justify-between text-sm text-gray-500">
-                        <span>Knee Load</span>
-                        <span id="knee-metric" class="font-mono font-medium text-gray-900">Normal</span>
-                    </div>
-                    <div class="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
-                        <div id="knee-bar" class="h-full bg-green-500 w-1/4 transition-all duration-300 ease-out"></div>
+                    <div id="risk-badge" class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold">
+                        LOW RISK
                     </div>
                 </div>
 
-                <!-- Prediction Info -->
-                <div class="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-                    <span class="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-1">Prediction
-                        (t+1s)</span>
-                    <div id="prediction-text" class="text-gray-700 text-sm">Stable posture. No immediate risk.</div>
+                <!-- Fall Risk Gauge -->
+                <div class="flex items-center gap-4">
+                    <div class="relative w-20 h-20 flex items-center justify-center">
+                        <svg class="w-full h-full transform -rotate-90">
+                            <circle cx="40" cy="40" r="36" stroke="#f1f5f9" stroke-width="8" fill="none"></circle>
+                            <circle id="risk-circle" cx="40" cy="40" r="36" stroke="#ef4444" stroke-width="8"
+                                fill="none" stroke-dasharray="226" stroke-dashoffset="226"
+                                class="transition-all duration-500"></circle>
+                        </svg>
+                        <div class="absolute flex flex-col items-center">
+                            <span id="risk-value" class="text-xl font-bold text-gray-800">0%</span>
+                            <span class="text-[10px] text-gray-400">RISK</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 space-y-2">
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span>Stability</span>
+                            <span id="stability-text" class="font-medium text-gray-800">100%</span>
+                        </div>
+                        <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div id="stability-bar" class="h-full bg-blue-500 w-full transition-all duration-300"></div>
+                        </div>
+
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span>Env. Hazard</span>
+                            <span id="env-text" class="font-medium text-gray-800">None</span>
+                        </div>
+                        <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div id="env-bar" class="h-full bg-gray-300 w-0 transition-all duration-300"></div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Hand Support Indicator (Hidden by default) -->
+                <!-- Metrics Grid -->
+                <div class="grid grid-cols-2 gap-3 mt-2">
+                    <div class="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        <div class="text-[10px] text-gray-400 uppercase font-bold mb-1">Spine Health</div>
+                        <div id="spine-status" class="text-sm font-semibold text-gray-700 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-green-500 text-base">straight</span> Good
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        <div class="text-[10px] text-gray-400 uppercase font-bold mb-1">Prediction</div>
+                        <div id="prediction-text" class="text-xs font-medium text-gray-700 truncate">Stable</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Knee Analysis Card -->
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-medium text-gray-600">Knee Load</span>
+                    <span id="knee-metric" class="text-xs font-mono text-gray-500">Normal</span>
+                </div>
+                <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div id="knee-bar" class="h-full bg-green-500 w-1/4 transition-all duration-300"></div>
+                </div>
+                <!-- Hand Support Indicator -->
                 <div id="support-indicator"
-                    class="hidden bg-green-50 rounded-2xl p-3 border border-green-100 flex items-center justify-between">
-                    <span class="text-sm font-medium text-green-700">Hand Support Detected</span>
-                    <span class="material-symbols-outlined text-green-600">pan_tool</span>
+                    class="hidden items-center gap-2 text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-lg self-start">
+                    <span class="material-symbols-outlined text-sm">pan_tool</span> Assisted
                 </div>
             </div>
 
             <!-- Event History Card -->
-            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 flex flex-col gap-4 max-h-60">
+            <div
+                class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-4 flex-1 min-h-[200px]">
                 <div class="flex items-center justify-between">
-                    <h3 class="text-lg font-medium text-gray-800 flex items-center gap-2">
-                        <span class="material-symbols-outlined text-purple-500">history</span> Event Log
+                    <h3 class="text-sm font-medium text-gray-800 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-purple-500 text-base">history</span> Event Log
                     </h3>
                     <button onclick="exportLogs()"
                         class="text-xs text-blue-600 font-medium hover:underline">Export</button>
                 </div>
-                <div id="event-log-container" class="overflow-y-auto space-y-2 pr-2 no-scrollbar flex-1">
-                    <!-- Logs will be injected here -->
+                <div id="event-log-container" class="overflow-y-auto space-y-2 pr-2 no-scrollbar h-full">
                     <div class="text-xs text-gray-400 text-center py-4">System Initialized</div>
                 </div>
             </div>
 
-            <!-- 3D Visualization Card -->
+            <!-- 3D View (Moved to bottom or toggle? User wants everything. Let's keep it but make it compact) -->
             <div
-                class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden flex-1 relative flex flex-col">
-                <div class="absolute top-4 left-4 z-10">
-                    <span
-                        class="bg-white/90 backdrop-blur-sm text-gray-800 px-3 py-1 rounded-full text-xs font-medium shadow-sm border border-gray-200">3D
-                        Spatial View</span>
-                </div>
-                <div id="three-container" class="w-full h-full bg-slate-900"></div>
+                class="bg-slate-900 rounded-3xl shadow-sm overflow-hidden h-40 shrink-0 relative border border-gray-700">
+                <div id="three-container" class="w-full h-full"></div>
+                <div class="absolute bottom-2 right-2 text-[10px] text-white/50">3D View</div>
             </div>
         </section>
 

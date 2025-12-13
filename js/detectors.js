@@ -1,6 +1,6 @@
 /**
  * Detectors Module
- * Handles AI Logic: Pose, Object Detection, Knee Analysis, Predictions
+ * Handles AI Logic: Pose, Object Detection, Knee Analysis, Predictions, Probability Metrics
  */
 import { UI } from './ui.js';
 import { Visualizer } from './visualizer.js';
@@ -13,9 +13,10 @@ let isSystemActive = true;
 // State
 let lastPoseTime = 0;
 let previousLandmarks = null;
-let previousVelocityY = 0; // For acceleration
+let previousVelocityY = 0;
 let fallFrameCount = 0;
 let lowVisibilityFrameCount = 0;
+let currentEnvRisk = 0;
 
 const FALL_TRIGGER_FRAMES = 10;
 const VISIBILITY_THRESHOLD = 0.6;
@@ -24,7 +25,6 @@ export const Detectors = {
     async init() {
         UI.updateStatus('Loading AI Models...', 'warning');
 
-        // 1. Load Pose
         poseDetector = new Pose({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
         });
@@ -38,14 +38,12 @@ export const Detectors = {
 
         poseDetector.onResults(this.onPoseResults.bind(this));
 
-        // 2. Load Object Detection (Coco-SSD)
         try {
             objectDetector = await cocoSsd.load();
-            Logger.add('success', 'AI Models Loaded', 'Pose + COCO-SSD Ready');
+            Logger.add('success', 'System Ready', 'Advanced Metrics Active');
         } catch (e) {
             console.error('Failed to load Object Detector', e);
             UI.updateStatus('Object AI Failed', 'error');
-            Logger.add('error', 'Object AI Failed', e.message);
         }
 
         UI.updateStatus('System Active', 'success');
@@ -54,17 +52,17 @@ export const Detectors = {
     async processFrame(videoElement) {
         if (!isSystemActive) return;
 
-        // Send to Pose
         await poseDetector.send({ image: videoElement });
 
-        // Object Detection (every few frames to save perfs could be done, but running every frame here for demo)
         if (objectDetector && videoElement.readyState === 4 && lowVisibilityFrameCount < 10) {
+            // Run object detection less frequently to check environment hazard level
+            // Just for demo, we run it. Logic handles throttling or basic checks inside analyzeObstacles
             const predictions = await objectDetector.detect(videoElement);
             this.analyzeObstacles(predictions);
         } else if (lowVisibilityFrameCount > 10) {
-            // If visibility is low for a while, disable object detection to save resources and avoid junk
             UI.showObstacleWarning(false);
             Visualizer.showObstacle3D(false);
+            currentEnvRisk = 0;
         }
     },
 
@@ -72,26 +70,25 @@ export const Detectors = {
         Visualizer.update2D(results);
 
         if (results.poseLandmarks) {
-            // Robust Occlusion Check
             const visibility = this.checkVisibility(results.poseLandmarks);
 
             if (visibility < VISIBILITY_THRESHOLD) {
                 lowVisibilityFrameCount++;
                 if (lowVisibilityFrameCount > 5) {
-                    UI.updateStatus('Camera Blocked / Poor Viz', 'warning');
-                    // We don't return here, we just flag it so analytics can be cautious
+                    UI.updateStatus('Camera Blocked', 'warning');
                 }
+                // Degrade functionality but keep showing what we can?
+                // For now, allow partial analysis with penalty
             } else {
                 lowVisibilityFrameCount = 0;
-                UI.updateStatus('Monitoring', 'success');
+                UI.updateStatus('Active', 'success');
             }
 
             this.analyzePose(results.poseLandmarks, results.poseWorldLandmarks, visibility);
         } else {
             lowVisibilityFrameCount++;
-            if (lowVisibilityFrameCount > 5) {
-                UI.updateStatus('No Person Detected', 'warning');
-            }
+            // Reset metrics if no person
+            UI.updateTelemetry({ risk: 0, stability: 0, envRisk: 0, spine: 'Good' });
         }
 
         const isFalling = fallFrameCount >= FALL_TRIGGER_FRAMES;
@@ -99,117 +96,144 @@ export const Detectors = {
     },
 
     checkVisibility(landmarks) {
-        // Check visibility of Lower Body landmarks
-        const indices = [23, 24, 25, 26, 27, 28]; // Hips, Knees, Ankles
+        const indices = [23, 24, 25, 26, 27, 28]; // Lower body
         let totalVis = 0;
         indices.forEach(i => totalVis += landmarks[i].visibility);
         return totalVis / indices.length;
     },
 
     analyzePose(landmarks, worldLandmarks, visibility) {
-        // If visibility is too low, skip analysis to prevent bad data
-        if (visibility < 0.4) return;
+        if (visibility < 0.3) return;
 
-        // 1. Hand Support / Load Distribution
+        // 1. Hand Support
         const handSupport = this.checkHandSupport(landmarks);
         UI.toggleHandSupport(handSupport);
 
-        // 2. Knee Pressure Analysis
+        // 2. Knee Pressure
         const leftKneeAngle = this.calculateAngle(landmarks[23], landmarks[25], landmarks[27]);
         const rightKneeAngle = this.calculateAngle(landmarks[24], landmarks[26], landmarks[28]);
-
-        // If hand support is active, we simulate "less pressure" by artificially increasing angle
-        // (Since closer to 180 is better)
-        let modifier = handSupport ? 20 : 0;
-
+        let modifier = handSupport ? 25 : 0;
         const minAngle = Math.min(leftKneeAngle, rightKneeAngle);
         const effectiveAngle = Math.min(180, minAngle + modifier);
-
         UI.updateKneePressure(effectiveAngle);
 
-        if (effectiveAngle < 100 && !handSupport && Math.random() < 0.05) { // Throttle logs
-            Logger.add('warning', 'High Knee Stress Detected', `Angle: ${Math.round(minAngle)}°`);
+        // 3. New Metrics Calculations
+        const stabilityScore = this.calculateStability(landmarks);
+        const spineHealth = this.calculateSpineHealth(landmarks);
+
+        // 4. Composite Fall Risk Calculation
+        // Risk increases with: Low Stability, Low Knee Angle (High pressure), High Env Risk, Fast Downward Velocity
+        const kneeRisk = Math.max(0, (140 - effectiveAngle)); // 0 to ~100
+        const stabilityRisk = 100 - stabilityScore; // 0 to 100
+        const envRisk = currentEnvRisk * 100; // 0 to 100
+
+        // Weighted Sum
+        // Knee: 30%, Stability: 40%, Env: 20%, Base: 10%
+        let riskIndex = (kneeRisk * 0.3) + (stabilityRisk * 0.4) + (envRisk * 0.2);
+
+        // Dynamic Boosters
+        if (this.checkFreefall(landmarks)) riskIndex = 100; // Immediate override
+        if (spineHealth === 'Poor') riskIndex += 10;
+
+        riskIndex = Math.min(100, Math.max(0, riskIndex));
+
+        // Telemetry Update
+        UI.updateTelemetry({
+            risk: riskIndex,
+            stability: stabilityScore,
+            envRisk: currentEnvRisk * 100,
+            spine: spineHealth
+        });
+
+        // Logger Triggers
+        if (riskIndex > 85 && Math.random() < 0.05) {
+            Logger.add('warning', 'High Fall Risk', `Risk Index: ${Math.round(riskIndex)}%`);
         }
 
-        // 3. Fall Detection Logic (Geometric) + Freefall (Acceleration)
+        // 5. Fall Detection
         const isFallen = this.checkFall(landmarks);
-        const isFreefall = this.checkFreefall(landmarks);
-
-        if (isFallen || isFreefall) {
+        if (isFallen || riskIndex >= 95) {
             fallFrameCount++;
-            if (fallFrameCount === FALL_TRIGGER_FRAMES) { // Log once
-                Logger.add('error', 'FALL DETECTED', isFreefall ? 'High Acceleration Impact' : 'Horizontal Posture');
+            if (fallFrameCount === FALL_TRIGGER_FRAMES) {
+                Logger.add('error', 'FALL DETECTED', `Risk: ${Math.round(riskIndex)}%`);
                 UI.toggleFallOverlay(true);
-                UI.updateStatus('FALL DETECTED', 'error');
             }
         } else {
             fallFrameCount = 0;
         }
 
-        // 4. Next Second Prediction
         this.predictNextAction(landmarks);
 
-        // Store for next frame
         previousLandmarks = landmarks;
         lastPoseTime = Date.now();
     },
 
+    calculateStability(landmarks) {
+        // Horizontal distance between Hip Center (COG approx) and Midpoint between Ankles (Base of support)
+        const hipX = (landmarks[23].x + landmarks[24].x) / 2;
+        const ankleX = (landmarks[27].x + landmarks[28].x) / 2;
+
+        // Normalized Deviation (0 to 0.5 usually)
+        const deviation = Math.abs(hipX - ankleX);
+
+        // Map deviation to 0-100 Score. 
+        // 0 deviation = 100 stability. 
+        // 0.2 deviation = 0 stability (Leaning way out)
+
+        const score = Math.max(0, 100 - (deviation * 500));
+        return score;
+    },
+
+    calculateSpineHealth(landmarks) {
+        // Angle between Hip-Shoulder vector and Vertical
+        const shoulderX = (landmarks[11].x + landmarks[12].x) / 2;
+        const shoulderY = (landmarks[11].y + landmarks[12].y) / 2;
+        const hipX = (landmarks[23].x + landmarks[24].x) / 2;
+        const hipY = (landmarks[23].y + landmarks[24].y) / 2;
+
+        const dx = shoulderX - hipX;
+        const dy = shoulderY - hipY;
+
+        // Angle from vertical (Y axis)
+        // atan2(dx, dy) -> 0 if vertical
+        const angleRad = Math.atan2(dx, dy);
+        const angleDeg = Math.abs(angleRad * 180 / Math.PI);
+
+        // If bent forward > 45 degrees, potentially poor posture (Stoop)
+        // Note: Squatting keeps back straight (angle near 0). Stooping bends back (angle > 40).
+
+        if (angleDeg > 45) return 'Poor';
+        return 'Good';
+    },
+
     checkHandSupport(landmarks) {
-        // Check if wrists are close to knees or thighs
-        // Wrists: 15 (Left), 16 (Right)
-        // Knees: 25, 26. Hips: 23, 24
-
-        // We check Y-distance. If Hands are roughly at Knee Height +/- threshold
-        // Or Hands are BELOW Hips significantly while Hips are low (Squat with hands on floor)
-
         const wrists = [landmarks[15], landmarks[16]];
         const knees = [landmarks[25], landmarks[26]];
-
         let supported = false;
-
         wrists.forEach(w => {
             if (w.visibility < 0.5) return;
             knees.forEach(k => {
                 if (k.visibility < 0.5) return;
-
-                // Euclidean distance in normalized coords
                 const dist = Math.hypot(w.x - k.x, w.y - k.y);
-                if (dist < 0.15) supported = true; // Close to knee
+                if (dist < 0.15) supported = true;
             });
         });
-
         return supported;
     },
 
     checkFreefall(landmarks) {
         if (!previousLandmarks) return false;
-
-        // Hip Center Y
         const currentY = (landmarks[23].y + landmarks[24].y) / 2;
         const prevY = (previousLandmarks[23].y + previousLandmarks[24].y) / 2;
-
-        const dy = currentY - prevY; // Change in position
-        // dy / dt (per frame) = Velocity
-
-        // Acceleration = Velocity - PreviousVelocity
+        const dy = currentY - prevY;
         const accel = dy - previousVelocityY;
         previousVelocityY = dy;
-
-        // Downward acceleration (Positive Y is down in image coords)
-        // Massive jump in Y pos per frame + increasing
-        // Threshold needs tuning, but let's say > 0.02 normalized units/frame^2 is suspicious
-
-        if (accel > 0.015 && dy > 0.02) {
-            // Moving down fast AND accelerating
-            return true;
-        }
+        if (accel > 0.015 && dy > 0.02) return true;
         return false;
     },
 
     analyzeObstacles(predictions) {
-        // Occlusion safety check
         if (lowVisibilityFrameCount > 0) return;
-
         if (!previousLandmarks) return;
 
         const feetY = Math.max(previousLandmarks[29].y, previousLandmarks[30].y);
@@ -224,7 +248,6 @@ export const Detectors = {
 
         predictions.forEach(pred => {
             if (pred.class === 'person') return;
-
             const bx = pred.bbox[0] / width;
             const by = pred.bbox[1] / height;
             const bw = pred.bbox[2] / width;
@@ -239,13 +262,13 @@ export const Detectors = {
             }
         });
 
+        // Update Risk Factor
+        currentEnvRisk = obstacleDetected ? 0.8 : 0; // High risk if object near
+
         UI.showObstacleWarning(obstacleDetected, obstacleObj ? obstacleObj.class : '');
 
         if (obstacleDetected && obstacleObj) {
-            // Only log unique obstacle events occasionally
-            if (Math.random() < 0.01) {
-                Logger.add('warning', 'Obstacle Detected', `${obstacleObj.class} near feet`);
-            }
+            if (Math.random() < 0.01) Logger.add('warning', 'Obstacle Hazard', `${obstacleObj.class}`);
             Visualizer.showObstacle3D(true, new THREE.Vector3(0.5, 0, 0));
         } else {
             Visualizer.showObstacle3D(false);
