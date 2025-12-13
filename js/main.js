@@ -23,13 +23,16 @@ async function setupCamera() {
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            // Try with ideal constraints first, but fall back if needed
+            const constraints = {
                 video: {
-                    width: 1280,
-                    height: 720,
-                    facingMode: 'user'
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                    // Removed facingMode to prevent NotFoundError on desktops
                 }
-            });
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
 
             video.onloadedmetadata = () => {
@@ -40,7 +43,19 @@ async function setupCamera() {
             };
         } catch (err) {
             console.error("Camera Error:", err);
-            UI.updateStatus("Camera Access Denied", "error");
+            // Fallback: try raw video: true if constraints failed
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    UI.resize();
+                    requestAnimationFrame(loop);
+                };
+            } catch (fallbackErr) {
+                console.error("Fallback Camera Error:", fallbackErr);
+                UI.updateStatus("Camera Not Found", "error");
+            }
         }
     }
 }

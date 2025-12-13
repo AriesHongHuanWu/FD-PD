@@ -1,11 +1,13 @@
 {
     "name": "fallguard-pro",
-    "version": "2.0.0",
-    "description": "AI FallGuard Pro - Static Build",
+    "version": "2.1.0",
+    "description": "AI FallGuard Pro",
     "scripts": {
-        "build": "node build.js"
+        "build:css": "tailwindcss -i ./src.css -o ./css/output.css --minify",
+        "build": "npm run build:css && node build.js"
     },
-    "keywords": [],
-    "author": "",
+    "devDependencies": {
+        "tailwindcss": "^3.4.1"
+    },
     "license": "MIT"
 }
