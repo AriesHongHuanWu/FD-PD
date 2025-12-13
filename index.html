@@ -1,198 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FallGuard AI - Safety Monitor</title>
-    
-    <!-- Fonts: Google Sans / Roboto -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
-    
+    <title>FallGuard AI</title>
+
+    <!-- Fonts: Inter & Google Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        google: {
-                            blue: '#1a73e8',
-                            red: '#ea4335',
-                            yellow: '#fbbc04',
-                            green: '#34a853',
-                            gray: '#f1f3f4',
-                            surface: '#ffffff',
-                            onSurface: '#202124'
-                        }
-                    },
-                    fontFamily: {
-                        sans: ['Google Sans', 'Roboto', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
 
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/style.css">
-
-    <!-- Libraries -->
-    <!-- Three.js -->
+    <!-- 3D & AI Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    
-    <!-- MediaPipe Pose -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-
-    <!-- TensorFlow.js & CocoSSD (for Objects) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-</head>
-<body class="bg-[#f0f2f5] text-[#202124] h-screen flex flex-col overflow-hidden selection:bg-google-blue selection:text-white">
 
-    <!-- App Bar -->
-    <header class="bg-white px-6 py-3 shadow-sm z-50 flex items-center justify-between shrink-0 h-16">
-        <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-google-blue/10 rounded-full flex items-center justify-center text-google-blue">
-                <span class="material-symbols-rounded text-2xl">health_and_safety</span>
-            </div>
-            <h1 class="text-xl font-medium text-gray-700 tracking-tight">FallGuard <span class="text-google-blue">AI</span></h1>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="bg-slate-50 text-slate-900 font-sans h-screen flex flex-col overflow-hidden">
+
+    <!-- Top Bar (Google Style) -->
+    <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shrink-0 z-50">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-blue-600 text-3xl">health_metrics</span>
+            <span class="text-xl font-medium tracking-tight text-gray-700">FallGuard <span
+                    class="text-blue-600">AI</span></span>
         </div>
-        
         <div class="flex items-center gap-4">
-            <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-100">
-                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span class="text-xs font-medium text-green-700">System Active</span>
+            <div id="status-chip"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-sm font-medium transition-colors">
+                <span class="material-symbols-outlined text-sm font-bold">check_circle</span>
+                <span>System Active</span>
             </div>
-            <button class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
-                <span class="material-symbols-rounded">settings</span>
+            <button class="p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors" title="Settings">
+                <span class="material-symbols-outlined">settings</span>
             </button>
-            <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-medium">U</div>
+            <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                A</div>
         </div>
     </header>
 
     <!-- Main Content Grid -->
-    <main class="flex-1 flex flex-col lg:flex-row p-4 gap-4 overflow-hidden">
-        
-        <!-- Left: Vision Feed (60%) -->
-        <div class="lg:w-[65%] flex flex-col gap-4 h-full relative">
-            <!-- Camera & AI Overlay -->
-            <div class="relative bg-black rounded-[24px] overflow-hidden shadow-lg flex-1 group">
-                <video id="input-video" class="hidden" playsinline></video>
-                <canvas id="output-canvas" class="w-full h-full object-cover"></canvas>
-                
-                <!-- Overlay UI -->
-                <div class="absolute top-4 left-4 flex gap-2">
-                    <span class="px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white/90 text-xs font-medium border border-white/10 flex items-center gap-1">
-                        <span class="material-symbols-rounded text-[14px]">videocam</span> Live Feed
-                    </span>
-                    <span class="px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white/90 text-xs font-medium border border-white/10 flex items-center gap-1">
-                        <span class="material-symbols-rounded text-[14px]">speed</span> <span id="fps-display">0</span> FPS
-                    </span>
-                </div>
+    <main class="flex-1 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto lg:overflow-hidden">
 
-                <!-- Alert Toast (Hidden by default) -->
-                <div id="danger-alert" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-0 transition-opacity duration-300 flex flex-col items-center justify-center">
-                     <div class="w-24 h-24 rounded-full bg-red-600 animate-ping absolute opacity-75"></div>
-                     <div class="relative w-24 h-24 bg-red-600 rounded-full flex items-center justify-center shadow-xl mb-4">
-                        <span class="material-symbols-rounded text-white text-5xl">warning</span>
-                     </div>
-                     <h2 class="text-4xl font-bold text-white drop-shadow-md" id="alert-text">FALL DETECTED</h2>
-                </div>
-            </div>
-
-            <!-- Bottom: 3D Visualization (Small strip) -->
-            <div class="h-48 bg-white rounded-[24px] shadow-sm p-4 relative overflow-hidden border border-gray-100">
-                <div class="absolute top-3 left-4 text-sm font-medium text-gray-500 flex items-center gap-2">
-                    <span class="material-symbols-rounded text-google-blue">3d_rotation</span> Real-time Skeleton
-                </div>
-                <div id="three-container" class="w-full h-full"></div>
-            </div>
-        </div>
-
-        <!-- Right: Analytics Cards (40%) -->
-        <div class="lg:w-[35%] flex flex-col gap-4 h-full overflow-y-auto no-scrollbar pb-4">
-            
-            <!-- Status Card -->
-            <div class="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100">
-                <div class="flex justify-between items-start mb-2">
-                    <div>
-                        <h3 class="text-sm font-medium text-gray-500">Current Status</h3>
-                        <div class="text-2xl font-bold text-gray-800 flex items-center gap-2 mt-1" id="main-status">
-                            Secure
-                            <span class="material-symbols-rounded text-green-500">check_circle</span>
-                        </div>
+        <!-- Left Column: Primary Feed (Allocated more space) -->
+        <section class="lg:col-span-8 flex flex-col gap-4 h-full">
+            <!-- Video Card -->
+            <div
+                class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden relative flex-1 flex flex-col">
+                <div class="absolute top-4 left-6 z-10 flex gap-2">
+                    <div
+                        class="bg-black/60 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                        <span class="material-symbols-outlined text-sm">videocam</span> Live Feed
                     </div>
-                    <div id="status-indicator" class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
-                        <span class="material-symbols-rounded text-green-600 text-2xl">shield</span>
+                    <div id="obstacle-alert"
+                        class="hidden bg-red-500/90 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-medium items-center gap-1 animate-pulse">
+                        <span class="material-symbols-outlined text-sm">warning</span> Obstacle Detected
+                    </div>
+                </div>
+
+                <div class="relative w-full h-full bg-black group">
+                    <video id="input-video"
+                        class="absolute inset-0 w-full h-full object-cover opacity-50 hidden"></video>
+                    <canvas id="output-canvas" class="w-full h-full object-cover"></canvas>
+
+                    <!-- Fall Alert Overlay -->
+                    <div id="fall-overlay"
+                        class="absolute inset-0 bg-red-600/80 backdrop-blur-sm hidden flex-col items-center justify-center text-white z-20">
+                        <span class="material-symbols-outlined text-8xl mb-4 animate-bounce">personal_injury</span>
+                        <h2 class="text-4xl font-bold mb-2">Fall Detected!</h2>
+                        <p class="text-lg opacity-90">Analyzing posture...</p>
+                        <button onclick="resetSystem()"
+                            class="mt-8 px-6 py-2 bg-white text-red-600 rounded-full font-bold hover:bg-gray-100 transition shadow-lg">Dismiss</button>
                     </div>
                 </div>
             </div>
+        </section>
 
-            <!-- Knee Health Card -->
-            <div class="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100">
-                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-medium text-gray-700 flex items-center gap-2">
-                        <span class="material-symbols-rounded text-orange-500">accessibility_new</span> Knee Load
+        <!-- Right Column: Analytics & 3D -->
+        <section class="lg:col-span-4 flex flex-col gap-4 h-full">
+
+            <!-- Biomechanics Card -->
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-800 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-blue-500">accessibility_new</span> Biomechanics
                     </h3>
-                    <span id="knee-val" class="text-sm font-bold text-gray-400">0%</span>
-                 </div>
-                 <!-- Gauge Bar -->
-                 <div class="w-full h-4 bg-gray-100 rounded-full overflow-hidden relative">
-                     <div id="knee-bar-left" class="h-full bg-google-green transition-all duration-300 absolute left-0" style="width: 0%"></div>
-                     <div id="knee-bar-right" class="h-full bg-google-green transition-all duration-300 absolute right-0" style="width: 0%"></div>
-                     <!-- Center marker -->
-                     <div class="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/50"></div>
-                 </div>
-                 <div class="flex justify-between mt-2 text-xs text-gray-400">
-                     <span>Left Leg</span>
-                     <span>Right Leg</span>
-                 </div>
-                 <p class="mt-3 text-xs text-gray-500 leading-relaxed">
-                     Monitors joint stress based on hip-knee-ankle angles. Red indicates excessive strain or unsafe posture.
-                 </p>
-            </div>
+                </div>
 
-            <!-- Prediction Card -->
-            <div class="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100 flex-1">
-                <h3 class="text-lg font-medium text-gray-700 flex items-center gap-2 mb-4">
-                    <span class="material-symbols-rounded text-purple-500">timeline</span> Predictive Insights
-                </h3>
-                
-                <div class="space-y-4">
-                    <!-- Next Second Movement -->
-                    <div class="p-3 bg-gray-50 rounded-xl border border-gray-200/50">
-                        <div class="text-xs text-gray-500 mb-1 uppercase tracking-wider font-semibold">Predicted Action (t+1s)</div>
-                        <div id="pred-action" class="text-base font-medium text-gray-800">Stable Standing</div>
+                <!-- Knee Pressure Meter -->
+                <div class="space-y-2">
+                    <div class="flex justify-between text-sm text-gray-500">
+                        <span>Knee Load</span>
+                        <span id="knee-metric" class="font-mono font-medium text-gray-900">Normal</span>
                     </div>
+                    <div class="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div id="knee-bar" class="h-full bg-green-500 w-1/4 transition-all duration-300 ease-out"></div>
+                    </div>
+                </div>
 
-                    <!-- Obstacle Scan -->
-                    <div class="p-3 bg-gray-50 rounded-xl border border-gray-200/50">
-                        <div class="flex justify-between items-center mb-1">
-                             <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Ground Hazards</div>
-                             <span id="obj-count" class="px-2 py-0.5 bg-gray-200 rounded text-[10px] font-bold text-gray-600">0 DETECTED</span>
-                        </div>
-                        <div id="obstacle-list" class="text-sm text-gray-600 min-h-[20px]">
-                            Path Clear
-                        </div>
-                    </div>
+                <!-- Prediction Info -->
+                <div class="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                    <span class="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-1">Prediction
+                        (t+1s)</span>
+                    <div id="prediction-text" class="text-gray-700 text-sm">Stable posture. No immediate risk.</div>
                 </div>
             </div>
 
-        </div>
+            <!-- 3D Visualization Card -->
+            <div
+                class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden flex-1 relative flex flex-col">
+                <div class="absolute top-4 left-4 z-10">
+                    <span
+                        class="bg-white/90 backdrop-blur-sm text-gray-800 px-3 py-1 rounded-full text-xs font-medium shadow-sm border border-gray-200">3D
+                        Spatial View</span>
+                </div>
+                <div id="three-container" class="w-full h-full bg-slate-900"></div>
+            </div>
+        </section>
+
     </main>
 
-    <!-- Scripts -->
-    <script type="module" src="js/visualizer.js"></script>
-    <script type="module" src="js/analysis.js"></script>
-    <script type="module" src="js/vision.js"></script>
+    <!-- JS Modules -->
     <script type="module" src="js/main.js"></script>
 </body>
+
 </html>
