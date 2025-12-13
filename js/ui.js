@@ -12,6 +12,8 @@ export const UI = {
         kneeMetric: document.getElementById('knee-metric'),
         kneeBar: document.getElementById('knee-bar'),
         predictionText: document.getElementById('prediction-text'),
+        supportIndicator: document.getElementById('support-indicator'),
+        eventLog: document.getElementById('event-log-container'),
         obstacleAlert: document.getElementById('obstacle-alert'),
         fallOverlay: document.getElementById('fall-overlay'),
         threeContainer: document.getElementById('three-container')
@@ -88,6 +90,42 @@ export const UI = {
 
     updatePrediction(text) {
         this.elements.predictionText.textContent = text;
+    },
+
+    toggleHandSupport(active) {
+        if (active) {
+            this.elements.supportIndicator.classList.remove('hidden');
+            this.elements.supportIndicator.classList.add('flex');
+        } else {
+            this.elements.supportIndicator.classList.add('hidden');
+            this.elements.supportIndicator.classList.remove('flex');
+        }
+    },
+
+    addLogEntry(event) {
+        const div = document.createElement('div');
+        // Type styles
+        let colorClass = 'text-gray-600';
+        let icon = 'info';
+
+        if (event.type === 'error') { colorClass = 'text-red-600'; icon = 'error'; }
+        else if (event.type === 'warning') { colorClass = 'text-yellow-600'; icon = 'warning'; }
+        else if (event.type === 'success') { colorClass = 'text-green-600'; icon = 'check_circle'; }
+
+        div.className = 'flex gap-3 items-start p-2 rounded hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0';
+        div.innerHTML = `
+            <span class="material-symbols-outlined text-sm mt-0.5 ${colorClass}">${icon}</span>
+            <div class="flex-1">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-xs font-semibold ${colorClass}">${event.type.toUpperCase()}</span>
+                    <span class="text-[10px] text-gray-400 font-mono">${event.time}</span>
+                </div>
+                <p class="text-xs text-gray-700 leading-tight">${event.message}</p>
+                ${event.details ? `<div class="text-[10px] text-gray-400 mt-1 pl-2 border-l-2 border-gray-200">${event.details}</div>` : ''}
+            </div>
+        `;
+
+        this.elements.eventLog.prepend(div);
     },
 
     // Helper to resize canvas
