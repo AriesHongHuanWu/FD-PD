@@ -4,59 +4,58 @@
 
 ## 一、 系統架構與檔案連接邏輯 (System Architecture)
 
-### 1. 模組關係詳解圖 (Detailed Module Relationship)
+### 1. 系統資料流與邏輯架構圖 (System Logic Data Flow)
 
-本圖展示了各個模組 (**Modules**) 內部使用的核心演算法 (**Algorithms**) 以及資料流向。
+本圖詳細展示了數據如何從攝影機流向 AI 模型，再經過具體的**數學公式**處理，最終轉換為 UI 與 3D 畫面。
 
 ```mermaid
 graph TD
-    subgraph Core [主程式核心 Core]
-        Main[main.js]
-        Camera[Camera Feed<br/>MediaDevices API]
+    %% Define Styles
+    classDef ai fill:#e0e7ff,stroke:#4338ca,stroke-width:2px;
+    classDef math fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef ui fill:#dcfce7,stroke:#15803d,stroke-width:2px;
+    classDef core fill:#f3f4f6,stroke:#4b5563,stroke-width:2px;
+
+    subgraph Input [1. Input Data]
+        Camera[Camera Feed<br/>MediaDevices API]:::core
     end
 
-    subgraph Logic [邏輯運算 Detectors]
-        Detectors[detectors.js]
-        MediaPipe[MediaPipe Pose Model<br/>BlazePose Architecture]
-        CocoSSD[COCO-SSD Model<br/>Object Detection]
+    subgraph AI_Processing [2. AI Inference (detectors.js)]
+        MediaPipe[<b>MediaPipe Pose</b><br/>Input: Video Frame<br/>Output: 33 Landmarks (x,y,z)]:::ai
+        CocoSSD[<b>COCO-SSD</b><br/>Input: Video Frame<br/>Output: Bounding Boxes]:::ai
+    end
+
+    subgraph Math_Logic [3. Math Engine (detectors.js)]
+        direction TB
         
-        MathEngine[運算引擎 Math Engine]
-        note1[1. Vector Angles<br/>- atan2<br/>2. Stability Score<br/>- COG Projection<br/>3. Fall Risk Index<br/>- Weighted Sum]
-    end
-
-    subgraph View [視覺呈現 Visualizer]
-        Visualizer[visualizer.js]
-        ThreeJS[Three.js Engine<br/>WebGL Renderer]
-        Canvas2D[Canvas API<br/>2D Context]
+        Calc_Angle[<b>Calculate Angles</b><br/>Formula: |atan2(Cy-By, Cx-Bx) - ...|<br/>Target: Knee, Spine Video]:::math
         
-        Map3D[3D Mapping Logic<br/>x,y -> -x,-y,z]
+        Calc_Stability[<b>Calculate Stability</b><br/>Formula: 100 - (|Hip.x - Ankle.x| * 500)<br/>Concept: COG vs Base of Support]:::math
+        
+        Calc_Obstacle[<b>Check Obstacle</b><br/>Formula: Math.hypot(Box.x - Feet.x, ...)<br/>Threshold: < 0.2 screen width]:::math
+        
+        Calc_Risk[<b>Final Risk Index</b><br/>Formula: Knee*0.3 + Stability*0.4 + Env*0.2<br/>Result: 0-100% Score]:::math
     end
 
-    subgraph Interface [使用者介面 UI]
-        UI[ui.js]
-        DOM[DOM Manipulation]
-        Tailwind[Tailwind CSS<br/>Utility Classes]
+    subgraph Visualization [4. Output & Rendering]
+        ThreeJS[<b>3D Visualizer</b> (visualizer.js)<br/>Tech: WebGL / Three.js<br/>Action: Update Skeleton Mesh]:::ui
+        DOM_UI[<b>UI Updates</b> (ui.js)<br/>Tech: Tailwind CSS<br/>Action: Dynamic Progress Bars & Alerts]:::ui
     end
 
-    %% Connections
-    Main -->|Start Loop requestAnimationFrame| Detectors
-    Camera -->|Video Frame Stream| Detectors
+    %% Data Flow Connections
+    Camera -->|Request Frame| MediaPipe
+    Camera -->|Request Frame (Low Freq)| CocoSSD
     
-    Detectors -->|Inference Request| MediaPipe
-    Detectors -->|Inference Request| CocoSSD
-    MediaPipe -->|Pose Landmarks| MathEngine
-    CocoSSD -->|Bounding Boxes| MathEngine
-    MathEngine --- note1
+    MediaPipe -->|Landmarks| Calc_Angle
+    MediaPipe -->|Landmarks| Calc_Stability
+    CocoSSD -->|Object Data| Calc_Obstacle
     
-    MathEngine -->|Processed Risks & Angles| UI
-    MathEngine -->|World Landmarks x,y,z| Visualizer
+    Calc_Angle -->|Knee Angle| Calc_Risk
+    Calc_Stability -->|Stability Score| Calc_Risk
+    Calc_Obstacle -->|Env Risk| Calc_Risk
     
-    Visualizer -->|Update Skeleton| Map3D
-    Map3D -->|Set Position| ThreeJS
-    MediaPipe -->|Raw Landmarks| Canvas2D
-    
-    UI -->|Update Metrics/Classes| DOM
-    DOM -->|Reflow/Repaint| Tailwind
+    Calc_Risk -->|Risk Data| DOM_UI
+    MediaPipe -->|World Landmarks| ThreeJS
 ```
 
 ### 2. 各檔案詳細邏輯與算法應用 (Detailed Logic per Module)
