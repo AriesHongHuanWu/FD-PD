@@ -16,6 +16,44 @@ const POSE_CONNECTIONS = [
     [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30], [29, 31], [30, 32] // Lower Body
 ];
 
+// Custom Drawing Functions (replacing @mediapipe/drawing_utils)
+function drawConnectors(ctx, landmarks, connections, style) {
+    if (!landmarks) return;
+    ctx.strokeStyle = style.color || '#00FF00';
+    ctx.lineWidth = style.lineWidth || 2;
+
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
+
+    connections.forEach(([i, j]) => {
+        const p1 = landmarks[i];
+        const p2 = landmarks[j];
+        if (p1 && p2 && p1.visibility > 0.5 && p2.visibility > 0.5) {
+            ctx.beginPath();
+            ctx.moveTo(p1.x * width, p1.y * height);
+            ctx.lineTo(p2.x * width, p2.y * height);
+            ctx.stroke();
+        }
+    });
+}
+
+function drawLandmarks(ctx, landmarks, style) {
+    if (!landmarks) return;
+    ctx.fillStyle = style.color || '#FF0000';
+    const radius = style.radius || 4;
+
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
+
+    landmarks.forEach(lm => {
+        if (lm && lm.visibility > 0.5) {
+            ctx.beginPath();
+            ctx.arc(lm.x * width, lm.y * height, radius, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+    });
+}
+
 export const Visualizer = {
     init() {
         this.initThree();
