@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Symbiotic Biomechanics</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="./src/style.css" rel="stylesheet">
+</head>
+
+<body class="bg-md-sys-light-surface text-md-sys-light-on-surface h-screen flex flex-col overflow-hidden">
+
+  <!-- App Bar -->
+  <header
+    class="h-16 shrink-0 flex items-center px-6 bg-md-sys-light-surface border-b border-md-sys-light-outline/10 z-10 relative">
+    <div class="flex items-center gap-3">
+      <div
+        class="w-10 h-10 rounded-full bg-md-sys-light-primary-container flex items-center justify-center text-md-sys-light-on-primary-container">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-medium leading-none">Symbiotic Rehab</h1>
+        <span class="text-xs text-md-sys-light-on-surface-variant">Biomechanics Output</span>
+      </div>
+    </div>
+    <div class="ml-auto flex items-center gap-3">
+      <span id="system-status"
+        class="hidden md:inline-flex px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-200">System
+        Active</span>
+      <button
+        class="w-10 h-10 rounded-full hover:bg-md-sys-light-surface-variant/30 flex items-center justify-center transition-colors">
+        <svg class="w-6 h-6 text-md-sys-light-on-surface-variant" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+          </path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col md:flex-row gap-4 p-4 md:p-6 bg-md-sys-light-surface-variant/20 relative z-0">
+
+    <!-- Left: Calibration & Stats -->
+    <aside class="w-full md:w-80 flex flex-col gap-4 shrink-0">
+      <!-- Calibration Card -->
+      <div class="card p-6">
+        <h2 class="text-title-medium mb-2 flex items-center gap-2">
+          <svg class="w-5 h-5 text-md-sys-light-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          Calibration
+        </h2>
+        <p class="text-body-medium text-md-sys-light-on-surface-variant mb-6">
+          Stand still for 3 seconds to normalize metrics for your height.
+        </p>
+        <button id="calibrate-btn" class="btn-primary w-full">
+          Start Calibration
+        </button>
+      </div>
+
+      <!-- Metrics Card -->
+      <div class="card p-6 flex-1 flex flex-col">
+        <h2 class="text-title-medium mb-4">Live Metrics</h2>
+        <div class="space-y-6">
+          <div class="metric-item">
+            <span class="label">Knee Flexion</span>
+            <span id="metric-flexion" class="value">0°</span>
+          </div>
+          <div class="h-px bg-md-sys-light-outline/10"></div>
+          <div class="metric-item">
+            <span class="label">Valgus Deviation</span>
+            <span id="metric-valgus" class="value">0°</span>
+          </div>
+          <div class="h-px bg-md-sys-light-outline/10"></div>
+          <div class="metric-item">
+            <span class="label">Angular Velocity</span>
+            <span id="metric-velocity" class="value">0 rad/s</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: Visualizer -->
+    <section
+      class="flex-1 min-h-[400px] relative rounded-3xl overflow-hidden bg-black shadow-md-elevation-2 border border-md-sys-light-outline/10">
+      <video id="input-video" class="absolute inset-0 w-full h-full object-cover opacity-80 scale-x-[-1]"
+        playsinline></video>
+      <canvas id="output-canvas" class="absolute inset-0 w-full h-full object-cover scale-x-[-1]"></canvas>
+
+      <!-- Status Pill (Floating) -->
+      <div class="absolute top-6 left-1/2 -translate-x-1/2" id="status-container">
+        <div id="status-pill"
+          class="flex items-center gap-3 px-5 py-2.5 bg-md-sys-light-surface/90 backdrop-blur-md rounded-full shadow-md-elevation-2 transition-all duration-300 border border-white/20">
+          <div id="status-indicator"
+            class="w-2.5 h-2.5 rounded-full bg-google-green shadow-[0_0_8px_rgba(52,168,83,0.6)]"></div>
+          <span id="status-text" class="text-label-large font-medium tracking-wide">Ready</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: Chart -->
+    <aside class="w-full md:w-80 flex flex-col shrink-0 h-48 md:h-auto">
+      <div class="card p-6 h-full flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-title-medium">Load Analysis</h2>
+          <span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md">Live</span>
+        </div>
+        <div class="flex-1 relative w-full h-full min-h-0">
+          <canvas id="load-chart"></canvas>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- UI Overlays -->
+  <div id="snackbar"></div>
+  <div id="loading-overlay"
+    class="fixed inset-0 bg-md-sys-light-surface z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+    <div
+      class="w-12 h-12 border-4 border-md-sys-light-primary-container border-t-md-sys-light-primary rounded-full animate-spin mb-4">
+    </div>
+    <h2 class="text-title-medium">Initializing Agent...</h2>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
