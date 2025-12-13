@@ -4,102 +4,78 @@
 
 ## 一、 系統架構與檔案連接邏輯 (System Architecture)
 
-### 1. 系統資料流與邏輯架構圖 (System Logic Data Flow)
+### 1. 模組關係詳解圖 (Detailed Module Relationship)
 
-本圖詳細展示了數據如何從攝影機流向 AI 模型，再經過具體的**數學公式**處理，最終轉換為 UI 與 3D 畫面。
+本圖展示了各個模組 (**Modules**) 內部使用的核心演算法 (**Algorithms**) 以及資料流向。
 
 ```mermaid
 graph TD
-    %% Define Styles
-    classDef ai fill:#e0e7ff,stroke:#4338ca,stroke-width:2px;
-    classDef math fill:#fef3c7,stroke:#d97706,stroke-width:2px;
-    classDef ui fill:#dcfce7,stroke:#15803d,stroke-width:2px;
-    classDef core fill:#f3f4f6,stroke:#4b5563,stroke-width:2px;
-
-    subgraph Input ["1. Input Data"]
-        Camera[Camera Feed<br/>MediaDevices API]:::core
+    subgraph Core [主程式核心 Core]
+        Main[main.js]
+        Camera[Camera Feed<br/>MediaDevices API]
     end
 
-    subgraph AI_Processing ["2. AI Inference (detectors.js)"]
-        MediaPipe[<b>MediaPipe Pose</b><br/>Input: Video Frame<br/>Output: 33 Landmarks (x,y,z)]:::ai
-        CocoSSD[<b>COCO-SSD</b><br/>Input: Video Frame<br/>Output: Bounding Boxes]:::ai
+    subgraph Logic [邏輯運算 Detectors]
+        Detectors[detectors.js]
+        MediaPipe[MediaPipe Pose Model<br/>BlazePose Architecture]
+        CocoSSD[COCO-SSD Model<br/>Object Detection]
+        
+        MathEngine[運算引擎 Math Engine]
+        note1[1. Vector Angles<br/>- atan2<br/>2. Stability Score<br/>- COG Projection<br/>3. Fall Risk Index<br/>- Weighted Sum]
     end
 
-    subgraph Math_Logic ["3. Math Engine (detectors.js)"]
-        direction TB
+    subgraph View [視覺呈現 Visualizer]
+        Visualizer[visualizer.js]
+        ThreeJS[Three.js Engine<br/>WebGL Renderer]
+        Canvas2D[Canvas API<br/>2D Context]
         
-        Calc_Angle[<b>Calculate Angles</b><br/>Formula: |atan2(Cy-By, Cx-Bx) - ...|<br/>Target: Knee, Spine Video]:::math
-        
-        Calc_Stability[<b>Calculate Stability</b><br/>Formula: 100 - (|Hip.x - Ankle.x| * 500)<br/>Concept: COG vs Base of Support]:::math
-        
-        Calc_Obstacle[<b>Check Obstacle</b><br/>Formula: Math.hypot(Box.x - Feet.x, ...)<br/>Threshold: < 0.2 screen width]:::math
-        
-        Calc_Risk[<b>Final Risk Index</b><br/>Formula: Knee*0.3 + Stability*0.4 + Env*0.2<br/>Result: 0-100% Score]:::math
+        Map3D[3D Mapping Logic<br/>x,y -> -x,-y,z]
     end
 
-    subgraph Visualization ["4. Output & Rendering"]
-        ThreeJS[<b>3D Visualizer</b> (visualizer.js)<br/>Tech: WebGL / Three.js<br/>Action: Update Skeleton Mesh]:::ui
-        DOM_UI[<b>UI Updates</b> (ui.js)<br/>Tech: Tailwind CSS<br/>Action: Dynamic Progress Bars & Alerts]:::ui
+    subgraph Interface [使用者介面 UI]
+        UI[ui.js]
+        DOM[DOM Manipulation]
+        Tailwind[Tailwind CSS<br/>Utility Classes]
     end
 
-    %% Data Flow Connections
-    Camera -->|Request Frame| MediaPipe
-    Camera -->|Request Frame (Low Freq)| CocoSSD
+    %% Connections
+    Main -->|Start Loop requestAnimationFrame| Detectors
+    Camera -->|Video Frame Stream| Detectors
     
-    MediaPipe -->|Landmarks| Calc_Angle
-    MediaPipe -->|Landmarks| Calc_Stability
-    CocoSSD -->|Object Data| Calc_Obstacle
+    Detectors -->|Inference Request| MediaPipe
+    Detectors -->|Inference Request| CocoSSD
+    MediaPipe -->|Pose Landmarks| MathEngine
+    CocoSSD -->|Bounding Boxes| MathEngine
+    MathEngine --- note1
     
-    Calc_Angle -->|Knee Angle| Calc_Risk
-    Calc_Stability -->|Stability Score| Calc_Risk
-    Calc_Obstacle -->|Env Risk| Calc_Risk
+    MathEngine -->|Processed Risks & Angles| UI
+    MathEngine -->|World Landmarks x,y,z| Visualizer
     
-    Calc_Risk -->|Risk Data| DOM_UI
-    MediaPipe -->|World Landmarks| ThreeJS
+    Visualizer -->|Update Skeleton| Map3D
+    Map3D -->|Set Position| ThreeJS
+    MediaPipe -->|Raw Landmarks| Canvas2D
+    
+    UI -->|Update Metrics/Classes| DOM
+    DOM -->|Reflow/Repaint| Tailwind
 ```
 
-### 2. 各檔案詳細邏輯與算法應用 (Detailed Logic per Module)
+### 2. 模組節點詳細註解 (Module Node Annotations)
 
-#### A. `detectors.js` (The Brain - 運算的核心)
-這是系統最複雜的部分，整合了兩個 AI 模型與多個物理算法。
+以下表格詳細說明了架構圖中每個節點的技術細節與應用公式：
 
-*   **使用的 AI 模型**:
-    1.  **MediaPipe Pose**: Google 的 BlazePose 架構。提供 33 個身體關鍵點 (Landmarks)，含 `(x, y, z, visibility)`。
-        *   *用途*: 姿勢分析、跌倒偵測、穩定度計算。
-    2.  **COCO-SSD (TensorFlow.js)**: 輕量級物件偵測模型 (Single Shot MultiBox Detector)。
-        *   *用途*: 辨識環境障礙物 (如背包、椅子)，計算 `EnvRisk`。
-
-*   **實作的數學算法**:
-    1.  **幾何運算 (Geometry)**: 使用 `Math.atan2(dy, dx)` 計算關節夾角。
-        *   *應用*: 膝蓋壓力 (Knee Pressure)、脊椎健康度 (Spine Health)。
-    2.  **物理平衡 (Physics Balance)**: 計算「重心 (Center of Gravity)」對「支撐面 (Base of Support)」的投影。
-        *   *應用*: 穩定度分數 (Stability Score)。公式：`100 - (|Hip.x - Ankle.x| * Gain)`。
-    3.  **加權風險評估 (Weighted Risk Assessment)**:
-        *   算法: `Risk = (Knee * 0.3) + (Stability * 0.4) + (Env * 0.2) + (Spine * 0.1)`。
-        *   *應用*: 將多維度數據正規化為單一的 0-100% 風險指標。
-
-#### B. `visualizer.js` (The Eyes - 3D 渲染與轉換)
-負責將抽象的 AI 數據轉化為使用者能理解的 3D 畫面。
-
-*   **核心技術**: **Three.js (WebGL Library)**。
-*   **關鍵邏輯**:
-    1.  **座標空間映射 (Coordinate Space Mapping)**:
-        *   MediaPipe 輸出的 `WorldLandmarks` 單位是**公尺 (Meters)**，原點在**臀部中心**。
-        *   Three.js 的 Y 軸通常朝上，而螢幕座標 Y 軸朝下。
-        *   **算法**: `Vector3( -lm.x, -lm.y + offset, -lm.z )`。進行鏡像翻轉與高度校正。
-    2.  **即時幾何更新 (Real-time Geometry Update)**:
-        *   不銷毀重建 Mesh，而是直接操作 BufferAttribute (`position.array`)。這是高效能圖學的關鍵 Design Pattern。
-
-#### C. `ui.js` (The Face - 介面與狀態管理)
-負責所有非 3D 的視覺反饋。
-
-*   **核心技術**: Native DOM API + Tailwind CSS。
-*   **關鍵邏輯**:
-    1.  **數據驅動樣式 (Data-Driven Styling)**:
-        *   利用 Template Literals (樣板字面值) 動態切換 Tailwind Class。
-        *   例: `${risk > 80 ? 'bg-red-500' : 'bg-green-500'}`。
-    2.  **微動畫 (Micro-Animations)**:
-        *   利用 CSS `transition-all` 與 `duration-300`，讓進度條平滑過渡。
+| 模組節點 (Node) | 核心功能 (Function) | 關鍵技術 (Technology) | 應用公式/邏輯 (Formulas & Logic) |
+| :--- | :--- | :--- | :--- |
+| **Main.js** | 系統啟動與主迴圈控制 | `requestAnimationFrame`, `Async/Await` | 確保 60FPS 幀率穩定；依序初始化 `Visualizer` -> `Detectors` -> `Camera`。 |
+| **Camera** | 獲取影像串流 | `navigator.mediaDevices.getUserMedia` | 使用 `{ width: { ideal: 1280 } }` 請求高畫質影像，並處理權限請求。 |
+| **Detectors.js** | **(大腦)** AI 推論與物理運算 | Singleton Pattern, Module Pattern | 負責協調 AI 模型與數學計算，將原始數據轉化為業務指標。 |
+| **MediaPipe** | 人體骨架偵測 | `Google MediaPipe Pose`, `WebAssembly` | 輸出 33 個關鍵點 $(x, y, z)$。模型經過大量 3D 動作捕捉數據訓練。 |
+| **COCO-SSD** | 環境障礙物偵測 | `TensorFlow.js`, `MobileNet` | 輸出 `[x, y, width, height]` Bounding Box。用於識別椅子、背包等絆倒風險。 |
+| **MathEngine** | **(核心)** 物理數學運算 | **Geometry & Physics** | 1. **膝蓋角度**: $\theta = |\text{atan2}(v_1) - \text{atan2}(v_2)|$<br>2. **穩定度**: $100 - |COG_x - Base_x| \times k$<br>3. **風險值**: $\sum (Risk_i \times Weight_i)$ |
+| **Visualizer.js** | **(眼睛)** 3D/2D 渲染 | `Three.js` (WebGL), Canvas API | 負責將數據視覺化。使用 `BufferGeometry` 優化效能 (不重複建物件)。 |
+| **Map3D** | 座標映射轉換 | `Vector Mapping` | MediaPipe $(x, y, z)$ $\rightarrow$ Three.js $(-x, -y+offset, -z)$。解決座標系方向不同(Y軸上下顛倒)的問題。 |
+| **Three.js** | 3D 場景管理 | `WebGLRenderer`, `Scene`, `Camera` | 建立虛擬 3D 空間，繪製骨架球體 (Joints) 與連線 (Bones)。 |
+| **UI.js** | **(臉)** 使用者介面 | `DOM API` | 負責更新 HTML 元素的文字、寬度 (ProgressBar) 與顏色。 |
+| **Tailwind** | 樣式與動畫 | `Utility-First CSS`, `Transition` | 使用 `duration-300 ease-out` 實現數據變化的平滑過渡效果。 |
 
 ---
 
@@ -134,7 +110,7 @@ graph TD
     // 歸一化偏移量 (Normalized Deviation)
     const deviation = Math.abs(hipX - ankleX);
     // 映射到 0-100 分數。係數 500 是經驗值，代表偏移 0.2 (屏幕寬度的 20%) 就視為 0 分。
-    const score = Math.max(0, 100 - (deviation * 500));
+    const score = Math.max(0, 100 - (Deviation * 500));
     ```
 
 ### 3. 障礙物距離判定 (Obstacle Proximity)
