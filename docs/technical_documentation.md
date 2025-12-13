@@ -16,16 +16,16 @@ graph TD
     classDef ui fill:#dcfce7,stroke:#15803d,stroke-width:2px;
     classDef core fill:#f3f4f6,stroke:#4b5563,stroke-width:2px;
 
-    subgraph Input [1. Input Data]
+    subgraph Input ["1. Input Data"]
         Camera[Camera Feed<br/>MediaDevices API]:::core
     end
 
-    subgraph AI_Processing [2. AI Inference (detectors.js)]
+    subgraph AI_Processing ["2. AI Inference (detectors.js)"]
         MediaPipe[<b>MediaPipe Pose</b><br/>Input: Video Frame<br/>Output: 33 Landmarks (x,y,z)]:::ai
         CocoSSD[<b>COCO-SSD</b><br/>Input: Video Frame<br/>Output: Bounding Boxes]:::ai
     end
 
-    subgraph Math_Logic [3. Math Engine (detectors.js)]
+    subgraph Math_Logic ["3. Math Engine (detectors.js)"]
         direction TB
         
         Calc_Angle[<b>Calculate Angles</b><br/>Formula: |atan2(Cy-By, Cx-Bx) - ...|<br/>Target: Knee, Spine Video]:::math
@@ -37,7 +37,7 @@ graph TD
         Calc_Risk[<b>Final Risk Index</b><br/>Formula: Knee*0.3 + Stability*0.4 + Env*0.2<br/>Result: 0-100% Score]:::math
     end
 
-    subgraph Visualization [4. Output & Rendering]
+    subgraph Visualization ["4. Output & Rendering"]
         ThreeJS[<b>3D Visualizer</b> (visualizer.js)<br/>Tech: WebGL / Three.js<br/>Action: Update Skeleton Mesh]:::ui
         DOM_UI[<b>UI Updates</b> (ui.js)<br/>Tech: Tailwind CSS<br/>Action: Dynamic Progress Bars & Alerts]:::ui
     end
