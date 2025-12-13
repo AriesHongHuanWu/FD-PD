@@ -1,5 +1,8 @@
-import { Pose } from '@mediapipe/pose';
-import { Camera } from '@mediapipe/camera_utils';
+import * as mpPose from '@mediapipe/pose';
+import * as mpCamera from '@mediapipe/camera_utils';
+
+const Pose = mpPose.Pose;
+const Camera = mpCamera.Camera;
 import Chart from 'chart.js/auto';
 import { BiomechanicsEngine } from './core/biomechanics.js';
 import { Visualizer } from './ui/visualizer.js';
