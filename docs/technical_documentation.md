@@ -70,8 +70,8 @@ graph TD
 | **Detectors.js** | **(大腦)** AI 推論與物理運算 | Singleton Pattern, Module Pattern | 負責協調 AI 模型與數學計算，將原始數據轉化為業務指標。 |
 | **MediaPipe** | 人體骨架偵測 | `Google MediaPipe Pose`, `WebAssembly` | 輸出 33 個關鍵點 $(x, y, z)$。模型經過大量 3D 動作捕捉數據訓練。 |
 | **COCO-SSD** | 環境障礙物偵測 | `TensorFlow.js`, `MobileNet` | 輸出 `[x, y, width, height]` Bounding Box。用於識別椅子、背包等絆倒風險。 |
-| **MathEngine** | **(核心)** 物理數學運算 | **Geometry & Physics** | 1. **膝蓋角度**: $\theta = |\text{atan2}(v_1) - \text{atan2}(v_2)|$<br>2. **穩定度**: $100 - |COG_x - Base_x| \times k$<br>3. **風險值**: $\sum (Risk_i \times Weight_i)$ |
-| **Visualizer.js** | **(眼睛)** 3D/2D 渲染 | `Three.js` (WebGL), Canvas API | 負責將數據視覺化。使用 `BufferGeometry` 優化效能 (不重複建物件)。 |
+| **MathEngine** | **(核心)** 物理數學運算 | **Geometry & Physics** | 1. **雙膝受力**: $\theta_L, \theta_R$ 獨立計算<br>2. **衝擊力 (Impact)**: $F = m(a+g)$ (Velocity Delta)<br>3. **穩定度**: $100 - |COG_x - Base_x| \times k$ |
+| **Visualizer.js** | **(眼睛)** 3D/2D 渲染 | `Three.js` (WebGL), Canvas API | 負責將數據視覺化。新增 **AR 膝蓋壓力光圈** (Green->Red)。 |
 | **Map3D** | 座標映射轉換 | `Vector Mapping` | MediaPipe $(x, y, z)$ $\rightarrow$ Three.js $(-x, -y+offset, -z)$。解決座標系方向不同(Y軸上下顛倒)的問題。 |
 | **Three.js** | 3D 場景管理 | `WebGLRenderer`, `Scene`, `Camera` | 建立虛擬 3D 空間，繪製骨架球體 (Joints) 與連線 (Bones)。 |
 | **UI.js** | **(臉)** 使用者介面 | `DOM API` | 負責更新 HTML 元素的文字、寬度 (ProgressBar) 與顏色。 |
@@ -83,21 +83,32 @@ graph TD
 
 這部分詳細列出程式碼中的數學公式。
 
-### 1. 向量角度計算 (Vector Angles)
-用於評估膝蓋受力 (Knee Pressure) 與脊椎姿勢 (Spine Health)。
+### 1. 雙膝壓力與衝擊力分析 (Dual Knee Pressure & Dynamic Impact)
 
-*   **公式**: $\theta = |atan2(Cy - By, Cx - Bx) - atan2(Ay - By, Ax - Bx)|$
-*   **程式碼 (`detectors.js`)**:
+#### A. 雙膝角度 (Dual Knee Angles)
+左右腳獨立計算，精確判斷單腳受力情況。
+*   **公式**: $\theta = |atan2(Hip) - atan2(Ankle)|$ (Vertex: Knee)
+*   **應用**: UI 分別顯示左/右膝蓋的負荷狀態條 (Progress Bar)。
+
+#### B. 動態衝擊預測 (Dynamic Impact Prediction) - $F=ma$
+核心亮點功能。當檢測到使用者從高處落地或快速蹲下時，利用「髖關節垂直速度」模擬重力加速度對膝蓋的衝擊。
+
+*   **物理原理**: 衝擊力 $F = m(g + a)$。我們使用 $a \approx \Delta v_y$ (垂直速度變化率)。
+*   **邏輯程式碼 (`detectors.js`)**:
     ```javascript
-    calculateAngle(a, b, c) {
-        // b 是頂點 (例如膝蓋)
-        // atan2 返回 -PI 到 PI 的弧度
-        const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-        let angle = Math.abs(radians * 180.0 / Math.PI);
-        if (angle > 180.0) angle = 360.0 - angle; // 確保角度取銳角側 (0-180)
-        return angle;
+    calculateImpact(landmarks) {
+        // dy > 0 代表向下移動 (因為 Y 軸向下為正)
+        const dy = currentHipY - prevHipY; 
+        
+        // 正常走路 dy ~ 0.005, 跳躍落地 dy ~ 0.05
+        if (dy > 0.015) { 
+            // 速度越快，Impact Factor 指數級上升 (1.0 -> 2.0+)
+            return 1.0 + ((dy - 0.015) * 30);
+        }
+        return 1.0;
     }
     ```
+*   **效果**: 當 `Impact Factor > 1.0` 時，膝蓋壓力值會瞬間乘上此係數，使 UI 變紅並發出警報，模擬真實物理受力。
 
 ### 2. 穩定度分析 (Stability Analysis)
 用於評估使用者是否站立不穩。

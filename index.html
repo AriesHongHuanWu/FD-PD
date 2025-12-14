@@ -162,17 +162,36 @@
 
             <!-- Knee Analysis Card -->
             <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-3">
-                <div class="flex justify-between items-center">
-                    <span class="text-sm font-medium text-gray-600">Knee Load</span>
-                    <span id="knee-metric" class="text-xs font-mono text-gray-500">Normal</span>
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-sm font-medium text-gray-600">Knee Load Analysis</span>
+                    <div id="support-indicator"
+                        class="hidden items-center gap-1 text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full">
+                        <span class="material-symbols-outlined text-xs">pan_tool</span> ASSISTED
+                    </div>
                 </div>
-                <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div id="knee-bar" class="h-full bg-green-500 w-1/4 transition-all duration-300"></div>
+
+                <!-- Left Knee -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>Left Knee</span>
+                        <span id="knee-load-left-text" class="font-mono text-gray-700">Normal</span>
+                    </div>
+                    <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div id="knee-load-left-bar" class="h-full bg-green-500 w-0 transition-all duration-100">
+                        </div>
+                    </div>
                 </div>
-                <!-- Hand Support Indicator -->
-                <div id="support-indicator"
-                    class="hidden items-center gap-2 text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-lg self-start">
-                    <span class="material-symbols-outlined text-sm">pan_tool</span> Assisted
+
+                <!-- Right Knee -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>Right Knee</span>
+                        <span id="knee-load-right-text" class="font-mono text-gray-700">Normal</span>
+                    </div>
+                    <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div id="knee-load-right-bar" class="h-full bg-green-500 w-0 transition-all duration-100">
+                        </div>
+                    </div>
                 </div>
             </div>
 

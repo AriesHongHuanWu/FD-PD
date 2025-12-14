@@ -114,38 +114,15 @@ export const Detectors = {
         const handSupport = this.checkHandSupport(landmarks);
         UI.toggleHandSupport(handSupport);
 
-        // 2. Knee Pressure with Weight Bearing Check
+        // 2. Knee Pressure (Dual Logic)
         const leftKneeAngle = this.calculateAngle(landmarks[23], landmarks[25], landmarks[27]);
         const rightKneeAngle = this.calculateAngle(landmarks[24], landmarks[26], landmarks[28]);
 
-        // Weight Bearing Logic: Compare Ankle Y levels.
-        // Y increases downwards. Higher Y = Lower on screen (Grounded).
-        const leftAnkleY = landmarks[27].y;
-        const rightAnkleY = landmarks[28].y;
-        const ankleDiff = Math.abs(leftAnkleY - rightAnkleY);
+        // 3. Dynamic Impact Logic (F=ma Proxy)
+        // Detect sudden vertical deceleration (landing)
+        const impactFactor = this.calculateImpact(landmarks);
 
-        // If diff > 0.05 (approx 5% screen height), one leg is lifted.
-        const isLeftLifted = (leftAnkleY < rightAnkleY - 0.05);
-        const isRightLifted = (rightAnkleY < leftAnkleY - 0.05);
-
-        let effectiveAngle = 180;
-
-        // Only calculate pressure for the leg that is bearing weight
-        if (isLeftLifted) {
-            // Left lifted, check right only
-            effectiveAngle = rightKneeAngle;
-        } else if (isRightLifted) {
-            // Right lifted, check left only
-            effectiveAngle = leftKneeAngle;
-        } else {
-            // Both grounded, take max load (min angle)
-            effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
-        }
-
-        let modifier = handSupport ? 30 : 0;
-        effectiveAngle = Math.min(180, effectiveAngle + modifier);
-
-        UI.updateKneePressure(effectiveAngle);
+        UI.updateKneePressure(leftKneeAngle, rightKneeAngle, impactFactor);
 
         // 3. New Metrics Calculations
         const stabilityScore = this.calculateStability(landmarks);
@@ -153,6 +130,12 @@ export const Detectors = {
 
         // 4. Composite Fall Risk Calculation
         // Risk increases with: Low Stability, Low Knee Angle (High pressure), High Env Risk, Fast Downward Velocity
+        // 4. Composite Fall Risk Calculation
+        // Use minimum knee angle (highest pressure) for risk calc
+        let effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
+        // Hand support modifier for risk only
+        if (handSupport) effectiveAngle += 30;
+
         const kneeRisk = Math.max(0, (140 - effectiveAngle)); // 0 to ~100
         const stabilityRisk = 100 - stabilityScore; // 0 to 100
         const envRisk = currentEnvRisk * 100; // 0 to 100
@@ -200,6 +183,29 @@ export const Detectors = {
 
         previousLandmarks = landmarks;
         lastPoseTime = Date.now();
+    },
+
+    calculateImpact(landmarks) {
+        if (!previousLandmarks) return 1.0;
+
+        // Hip Center Velocity Y
+        const currentHipY = (landmarks[23].y + landmarks[24].y) / 2;
+        const prevHipY = (previousLandmarks[23].y + previousLandmarks[24].y) / 2;
+
+        // Positive dy = Moving Downwards
+        const dy = currentHipY - prevHipY;
+
+        // Thresholds for "Impact"
+        // Normal walking dy ~ 0.005
+        // Jump landing dy ~ 0.02 - 0.05
+
+        if (dy > 0.015) { // Fast downward movement
+            // Amplify factor based on speed
+            // Map 0.015 -> 1.0, 0.05 -> 2.0
+            return 1.0 + ((dy - 0.015) * 30);
+        }
+
+        return 1.0;
     },
 
     calculateStability(landmarks) {

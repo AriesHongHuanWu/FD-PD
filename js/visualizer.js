@@ -11,10 +11,20 @@ let obstacleMesh;
 
 // Standard MediaPipe Pose Connections
 const POSE_CONNECTIONS = [
-    [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // Upper Body
-    [11, 23], [12, 24], // Torso
-    [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30], [29, 31], [30, 32] // Lower Body
+    [11, 12], [11, 23], [12, 24], [23, 24], // Torso
+    [11, 13], [13, 15], [12, 14], [14, 16], // Arms
+    [23, 25], [25, 27], [24, 26], [26, 28], // Legs
+    [27, 29], [28, 30] // Feet
 ];
+
+// Helper for angle calculation (Duplicate for independent viz logic)
+const getAngle = (a, b, c) => {
+    if (!a || !b || !c) return 180;
+    const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    let angle = Math.abs(radians * 180.0 / Math.PI);
+    if (angle > 180.0) angle = 360.0 - angle;
+    return angle;
+};
 
 // Custom Drawing Functions (replacing @mediapipe/drawing_utils)
 function drawConnectors(ctx, landmarks, connections, style) {
@@ -142,10 +152,62 @@ export const Visualizer = {
         ctx.drawImage(results.image, 0, 0, width, height);
 
         if (results.poseLandmarks) {
-            drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: 'rgba(14, 165, 233, 0.8)', lineWidth: 4 });
-            drawLandmarks(ctx, results.poseLandmarks, { color: '#38bdf8', lineWidth: 2, radius: 3 });
+            // Draw Connectors
+            drawConnectors(UI.elements.ctx, results.poseLandmarks, POSE_CONNECTIONS,
+                { color: 'rgba(14, 165, 233, 0.8)', lineWidth: 4 });
+
+            // Draw Landmarks (General)
+            drawLandmarks(UI.elements.ctx, results.poseLandmarks,
+                { color: '#38bdf8', lineWidth: 2, radius: 3 });
+
+            // Draw AR Knee Indicators
+            this.drawKneeIndicators(results.poseLandmarks);
         }
-        ctx.restore();
+        UI.elements.ctx.restore();
+    },
+
+    drawKneeIndicators(landmarks) {
+        const ctx = UI.elements.ctx;
+        const leftKnee = landmarks[25];
+        const rightKnee = landmarks[26];
+        const width = UI.elements.canvas.width;
+        const height = UI.elements.canvas.height;
+
+        const drawIndicator = (center, angle) => {
+            if (center.visibility < 0.5) return;
+
+            // Map angle to color (180=Green, 90=Red)
+            // Pressure 0-100 logic
+            const pressure = Math.max(0, Math.min(100, (180 - angle) / 0.9));
+
+            let color = `rgba(34, 197, 94, 0.6)`; // Green-500
+            let radius = 15;
+
+            if (pressure > 80) {
+                color = `rgba(239, 68, 68, 0.8)`; // Red-500
+                radius = 25; // Pulse/Enlarge on high load
+            } else if (pressure > 50) {
+                color = `rgba(234, 179, 8, 0.7)`; // Yellow-500
+                radius = 20;
+            }
+
+            ctx.beginPath();
+            ctx.arc(center.x * width, center.y * height, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Optional: Ring
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        };
+
+        // Calculate Angles locally for visualization
+        const leftAngle = getAngle(landmarks[23], landmarks[25], landmarks[27]);
+        const rightAngle = getAngle(landmarks[24], landmarks[26], landmarks[28]);
+
+        drawIndicator(leftKnee, leftAngle);
+        drawIndicator(rightKnee, rightAngle);
     },
 
     update3D(worldLandmarks, isFall, isAlarm) {

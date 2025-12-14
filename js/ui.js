@@ -9,8 +9,10 @@ export const UI = {
         canvas: document.getElementById('output-canvas'),
         ctx: document.getElementById('output-canvas').getContext('2d'),
         statusChip: document.getElementById('status-chip'),
-        kneeMetric: document.getElementById('knee-metric'),
-        kneeBar: document.getElementById('knee-bar'),
+        kneeLoadLeftBar: document.getElementById('knee-load-left-bar'),
+        kneeLoadRightBar: document.getElementById('knee-load-right-bar'),
+        kneeLoadLeftText: document.getElementById('knee-load-left-text'),
+        kneeLoadRightText: document.getElementById('knee-load-right-text'),
         predictionText: document.getElementById('prediction-text'),
         supportIndicator: document.getElementById('support-indicator'),
         eventLog: document.getElementById('event-log-container'),
@@ -45,35 +47,53 @@ export const UI = {
         }
     },
 
-    updateKneePressure(angle) {
-        // Angle < 100 is high pressure (red)
-        // Angle 100-140 is medium (yellow)
-        // Angle > 140 is low (green)
+    updateKneePressure(leftAngle, rightAngle, impactFactor = 1.0) {
+        // ImpactFactor: Multiply "Pressure" logic. 
+        // Normal pressure (0-100 score based on angle).
+        // If impact > 1.0, pressure score boosts up. 
 
-        let colorClass = 'bg-green-500';
-        let text = 'Normal';
-        let width = '25%'; // Base width
+        const getBarData = (angle, impact) => {
+            // Base pressure from angle (Lower angle = Higher pressure)
+            // 180deg = 0 pressure. 90deg = High pressure.
+            let pressure = Math.max(0, Math.min(100, (180 - angle) / 0.9)); // Scale 180-90 -> 0-100 approx
 
-        // Inverted logic: Lower angle = Higher pressure
-        // Map 180->0 to 0%->100% (roughly)
-        const pressure = Math.max(0, Math.min(100, (180 - angle) / 1.8 * 1.5));
-        width = `${Math.max(10, pressure)}%`;
+            // Apply Impact Multiplier (e.g. landing from jump)
+            pressure *= impact;
+            pressure = Math.min(100, pressure);
 
-        if (angle < 100) {
-            colorClass = 'bg-red-500';
-            text = 'Critical Load';
-            this.elements.kneeBar.parentElement.classList.add('animate-pulse');
-        } else if (angle < 140) {
-            colorClass = 'bg-yellow-500';
-            text = 'Moderate Load';
-            this.elements.kneeBar.parentElement.classList.remove('animate-pulse');
+            let colorClass = 'bg-green-500';
+            let text = 'Normal';
+
+            if (pressure > 80) {
+                colorClass = 'bg-red-500';
+                text = impact > 1.2 ? 'IMPACT!' : 'Critical';
+            } else if (pressure > 50) {
+                colorClass = 'bg-yellow-500';
+                text = 'High Load';
+            }
+
+            return { width: `${Math.max(5, pressure)}%`, color: colorClass, text };
+        };
+
+        const left = getBarData(leftAngle, impactFactor);
+        const right = getBarData(rightAngle, impactFactor);
+
+        // Update Left
+        this.elements.kneeLoadLeftBar.className = `h-full transition-all duration-100 ease-out ${left.color}`;
+        this.elements.kneeLoadLeftBar.style.width = left.width;
+        this.elements.kneeLoadLeftText.textContent = `${left.text} (${Math.round(leftAngle)}°)`;
+
+        // Update Right
+        this.elements.kneeLoadRightBar.className = `h-full transition-all duration-100 ease-out ${right.color}`;
+        this.elements.kneeLoadRightBar.style.width = right.width;
+        this.elements.kneeLoadRightText.textContent = `${right.text} (${Math.round(rightAngle)}°)`;
+
+        // Impact Visual Feedback
+        if (impactFactor > 1.5) {
+            this.elements.kneeLoadLeftBar.parentElement.parentElement.parentElement.classList.add('animate-pulse');
         } else {
-            this.elements.kneeBar.parentElement.classList.remove('animate-pulse');
+            this.elements.kneeLoadLeftBar.parentElement.parentElement.parentElement.classList.remove('animate-pulse');
         }
-
-        this.elements.kneeBar.className = `h-full transition-all duration-300 ease-out ${colorClass}`;
-        this.elements.kneeBar.style.width = width;
-        this.elements.kneeMetric.textContent = `${text} (${Math.round(angle)}°)`;
     },
 
     showObstacleWarning(show, objectName = 'Obstacle') {
