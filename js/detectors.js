@@ -179,6 +179,9 @@ export const Detectors = {
         // Threshold is 30% of average shin length (adaptive to zoom/distance)
         const DYNAMIC_THRESHOLD = avgShin * 0.3;
 
+        const isLeftGrounded = leftAnkleY > (groundLevel - DYNAMIC_THRESHOLD);
+        const isRightGrounded = rightAnkleY > (groundLevel - DYNAMIC_THRESHOLD);
+
         // 2a. Climbing/Stepping Logic (Stable Elevated Foot Heuristic)
         // If a foot is NOT grounded (lifted) but is STATIONARY, it's likely on a step/box.
 
