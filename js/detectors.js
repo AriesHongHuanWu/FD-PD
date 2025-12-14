@@ -16,9 +16,16 @@ let previousLandmarks = null;
 let previousVelocityY = 0;
 let fallFrameCount = 0;
 let lowVisibilityFrameCount = 0;
+
 let currentEnvRisk = 0;
 
+// Environmental Context
+let seatObjects = []; // { bbox: [x, y, w, h], class: str, bottomY: float }
+let leftFootStabilityTimer = 0;
+let rightFootStabilityTimer = 0;
+
 const FALL_TRIGGER_FRAMES = 60; // ~2 seconds @ 30fps
+const STABILITY_FRAMES = 10; // ~0.3s to confirm "Stable Step"
 const VISIBILITY_THRESHOLD = 0.6;
 
 export const Detectors = {
@@ -115,25 +122,116 @@ export const Detectors = {
         UI.toggleHandSupport(handSupport);
 
         // 2. Knee Pressure (Dual Logic)
-        const leftKneeAngle = this.calculateAngle(landmarks[23], landmarks[25], landmarks[27]);
-        const rightKneeAngle = this.calculateAngle(landmarks[24], landmarks[26], landmarks[28]);
+        // Use World Landmarks (3D) for alignment-invariant angle
+        const leftKneeAngle = this.calculateAngle(worldLandmarks[23], worldLandmarks[25], worldLandmarks[27]);
+        const rightKneeAngle = this.calculateAngle(worldLandmarks[24], worldLandmarks[26], worldLandmarks[28]);
+
+        // Detect Grounded Feet (Dynamic Logic)
+        // Previous fixed threshold fails if camera is far/close.
+        // Solution: Use Shin Length (Knee to Ankle distance) as a dynamic ruler.
+
+        // Calculate Shin Lengths (Euclidean distance)
+        const getDist = (i1, i2) => Math.hypot(landmarks[i1].x - landmarks[i2].x, landmarks[i1].y - landmarks[i2].y);
+        const leftShin = getDist(25, 27);
+        const rightShin = getDist(26, 28);
+        const avgShin = (leftShin + rightShin) / 2;
+
+        // Ground Level is the lowest ankle point
+        const leftAnkleY = landmarks[27].y;
+        const rightAnkleY = landmarks[28].y;
+        const groundLevel = Math.max(leftAnkleY, rightAnkleY);
+
+        // Threshold is 30% of average shin length (adaptive to zoom/distance)
+        const DYNAMIC_THRESHOLD = avgShin * 0.3;
+
+        // 2a. Climbing/Stepping Logic (Stable Elevated Foot Heuristic)
+        // If a foot is NOT grounded (lifted) but is STATIONARY, it's likely on a step/box.
+
+        const checkFootStability = (footIndex, timer) => {
+            // Velocity check
+            const curr = landmarks[footIndex];
+            const prev = previousLandmarks ? previousLandmarks[footIndex] : curr;
+            const vel = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+
+            if (vel < 0.002) return timer + 1; // Very stable
+            return 0; // Moving
+        };
+
+        leftFootStabilityTimer = checkFootStability(27, leftFootStabilityTimer);
+        rightFootStabilityTimer = checkFootStability(28, rightFootStabilityTimer);
+
+        const isLeftSupported = isLeftGrounded || (leftFootStabilityTimer > STABILITY_FRAMES);
+        const isRightSupported = isRightGrounded || (rightFootStabilityTimer > STABILITY_FRAMES);
+
+        // 2b. Sitting Detection (Object Overlap + Depth Check)
+        let isSitting = false;
+        if (seatObjects.length > 0) {
+            const hipX = (landmarks[23].x + landmarks[24].x) / 2;
+            const hipY = (landmarks[23].y + landmarks[24].y) / 2;
+            const feetY = groundLevel; // Furthest down point of user
+
+            for (const seat of seatObjects) {
+                // 2D Overlap: Hip inside box
+                const inBox = hipX > seat.bbox.x && hipX < (seat.bbox.x + seat.bbox.w) &&
+                    hipY > seat.bbox.y && hipY < (seat.bbox.y + seat.bbox.h);
+
+                // Depth Alignment: Seat bottom approx same as Feet bottom?
+                // Threshold: 10% of screen height
+                const depthMatch = Math.abs(seat.bottomY - feetY) < 0.1;
+
+                if (inBox && depthMatch) {
+                    isSitting = true;
+                    break;
+                }
+            }
+        }
+
+        if (isSitting) {
+            UI.updateStatus('Sitting Detected (Load masked)', 'success');
+        }
 
         // 3. Dynamic Impact Logic (F=ma Proxy)
-        // Detect sudden vertical deceleration (landing)
         const impactFactor = this.calculateImpact(landmarks);
 
-        UI.updateKneePressure(leftKneeAngle, rightKneeAngle, impactFactor);
+        // UI Updates: 
+        // If Sitting: Force 180 (Zero Load).
+        // If Supported (Ground or Step): Show Angle.
+        // If Air (Unsupported): Force 180.
+
+        let uiLeftAngle = 180;
+        let uiRightAngle = 180;
+
+        if (!isSitting) {
+            if (isLeftSupported) uiLeftAngle = leftKneeAngle;
+            if (isRightSupported) uiRightAngle = rightKneeAngle;
+        }
+
+        UI.updateKneePressure(uiLeftAngle, uiRightAngle, impactFactor);
 
         // 3. New Metrics Calculations
         const stabilityScore = this.calculateStability(landmarks);
         const spineHealth = this.calculateSpineHealth(landmarks);
 
         // 4. Composite Fall Risk Calculation
-        // Risk increases with: Low Stability, Low Knee Angle (High pressure), High Env Risk, Fast Downward Velocity
-        // 4. Composite Fall Risk Calculation
-        // Use minimum knee angle (highest pressure) for risk calc
-        let effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
-        // Hand support modifier for risk only
+        // Calculate effective angle based on LOADED legs only
+        let effectiveAngle = 180; // Default safe
+        if (isSitting) {
+            effectiveAngle = 180; // Safe
+        } else {
+            if (isLeftSupported && isRightSupported) {
+                effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
+            } else if (isLeftSupported) {
+                effectiveAngle = leftKneeAngle;
+            } else if (isRightSupported) {
+                effectiveAngle = rightKneeAngle;
+            }
+        }
+        // If in air/unsupported, effectiveAngle stays 180 (Safe)
+        // If both in air, we default to 180 (Safe) unless Impact Factor is high?
+        // Actually impact factor is separate multiplier in UI, but for Risk Index:
+        // Jumping isn't necessarily "High Pressure" until landing.
+
+        // Hand support modifier
         if (handSupport) effectiveAngle += 30;
 
         const kneeRisk = Math.max(0, (140 - effectiveAngle)); // 0 to ~100
@@ -286,14 +384,32 @@ export const Detectors = {
         const height = UI.elements.video.videoHeight;
         if (width === 0) return;
 
+        seatObjects = []; // Reset for this frame
+
         predictions.forEach(pred => {
-            if (pred.class === 'person') return;
+            // Normalize bbox to 0-1
             const bx = pred.bbox[0] / width;
             const by = pred.bbox[1] / height;
             const bw = pred.bbox[2] / width;
             const bh = pred.bbox[3] / height;
-            const boxCenter = { x: bx + bw / 2, y: by + bh / 2 };
+            const bottomY = by + bh;
 
+            // Track Seats
+            if (['chair', 'couch', 'bench', 'bed'].includes(pred.class)) {
+                seatObjects.push({
+                    bbox: { x: bx, y: by, w: bw, h: bh },
+                    bottomY: bottomY,
+                    class: pred.class
+                });
+                return; // Don't treat seats as instantaneous tripping hazards (maybe?)
+                // Actually, if you trip on a chair it IS a hazard.
+                // But specifically for 'Sitting vs Hazard', let's separate.
+            }
+
+            if (pred.class === 'person') return;
+
+            // Standard Obstacle Logic
+            const boxCenter = { x: bx + bw / 2, y: by + bh / 2 };
             const dist = Math.hypot(boxCenter.x - feetX, boxCenter.y - feetY);
 
             if (dist < 0.2 && boxCenter.y > 0.5) {
@@ -365,10 +481,22 @@ export const Detectors = {
 
     calculateAngle(a, b, c) {
         if (!a || !b || !c) return 180;
-        const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-        let angle = Math.abs(radians * 180.0 / Math.PI);
-        if (angle > 180.0) angle = 360.0 - angle;
-        return angle;
+
+        // Use 3D vector calculation if z is available (World Landmarks)
+        // Cosine Rule: C^2 = A^2 + B^2 - 2AB*cos(gamma)
+        // Vector approach: dot(BA, BC) / (|BA| * |BC|)
+
+        const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
+        const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
+
+        const dot = (v1.x * v2.x) + (v1.y * v2.y) + (v1.z * v2.z);
+        const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
+        const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
+
+        if (mag1 * mag2 === 0) return 180;
+
+        let angleRad = Math.acos(dot / (mag1 * mag2));
+        return angleRad * (180.0 / Math.PI);
     }
 };
 
