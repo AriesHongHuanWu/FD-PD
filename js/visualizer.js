@@ -142,28 +142,81 @@ export const Visualizer = {
         });
     },
 
-    update2D(results) {
-        const ctx = UI.elements.ctx;
-        const width = UI.elements.canvas.width;
-        const height = UI.elements.canvas.height;
+    update2D(results, predictedLandmarks = null, showReal = true, showGhost = false) {
+        if (!this.elements.ctx) return;
+        const ctx = this.elements.ctx;
+        const width = this.elements.canvas.width;
+        const height = this.elements.canvas.height;
 
         ctx.save();
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(results.image, 0, 0, width, height);
 
-        if (results.poseLandmarks) {
-            // Draw Connectors
-            drawConnectors(UI.elements.ctx, results.poseLandmarks, POSE_CONNECTIONS,
-                { color: 'rgba(14, 165, 233, 0.8)', lineWidth: 4 });
+        // Draw Ghost Skeleton (Background layer)
+        if (showGhost && predictedLandmarks) {
+            this.drawSkeleton(ctx, predictedLandmarks, {
+                lineColor: '#00e5ff', // Cyan-400
+                lineWidth: 2,
+                pointColor: '#00e5ff',
+                pointRadius: 2,
+                dotted: true
+            });
+        }
 
-            // Draw Landmarks (General)
-            drawLandmarks(UI.elements.ctx, results.poseLandmarks,
-                { color: '#38bdf8', lineWidth: 2, radius: 3 });
+        // Draw Real Skeleton
+        if (results.poseLandmarks && showReal) {
+            // Draw Connectors & Landmarks using helper
+            this.drawSkeleton(ctx, results.poseLandmarks, {
+                lineColor: 'rgba(14, 165, 233, 0.8)', // Sky-500
+                lineWidth: 4,
+                pointColor: '#38bdf8', // Sky-400
+                pointRadius: 3
+            });
 
-            // Draw AR Knee Indicators
+            // Draw AR Knee Indicators (Only on Real Skeleton)
             this.drawKneeIndicators(results.poseLandmarks);
         }
-        UI.elements.ctx.restore();
+
+        ctx.restore();
+    },
+
+    drawSkeleton(ctx, landmarks, style) {
+        // Line Style
+        ctx.strokeStyle = style.lineColor;
+        ctx.lineWidth = style.lineWidth;
+        if (style.dotted) ctx.setLineDash([4, 4]);
+        else ctx.setLineDash([]);
+
+        const width = ctx.canvas.width;
+        const height = ctx.canvas.height;
+
+        // Draw Lines
+        ctx.beginPath();
+        POSE_CONNECTIONS.forEach(([i, j]) => {
+            const p1 = landmarks[i];
+            const p2 = landmarks[j];
+            // Check visibility if available (predicted landmarks might not have explicit visibility, assume visible)
+            const v1 = p1.visibility !== undefined ? p1.visibility : 1;
+            const v2 = p2.visibility !== undefined ? p2.visibility : 1;
+
+            if (p1 && p2 && v1 > 0.5 && v2 > 0.5) {
+                ctx.moveTo(p1.x * width, p1.y * height);
+                ctx.lineTo(p2.x * width, p2.y * height);
+            }
+        });
+        ctx.stroke();
+
+        // Draw Points
+        ctx.fillStyle = style.pointColor;
+        ctx.setLineDash([]); // Reset for points
+        landmarks.forEach(lm => {
+            const v = lm.visibility !== undefined ? lm.visibility : 1;
+            if (lm && v > 0.5) {
+                ctx.beginPath();
+                ctx.arc(lm.x * width, lm.y * height, style.pointRadius, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        });
     },
 
     drawKneeIndicators(landmarks) {

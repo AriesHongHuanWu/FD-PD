@@ -72,7 +72,20 @@
                 <div class="absolute top-4 left-6 z-10 flex gap-2">
                     <div
                         class="bg-black/60 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
-                        <span class="material-symbols-outlined text-sm">videocam</span> Live Feed
+                        <span class="material-symbols-outlined text-sm">videocam</span> Live
+                    </div>
+                    <!-- Visualizer Controls -->
+                    <div class="flex gap-2">
+                        <label
+                            class="cursor-pointer bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-2 py-1 rounded-full text-[10px] flex items-center gap-1 border border-white/10 select-none transition-colors">
+                            <input type="checkbox" id="toggle-real-skeleton" class="hidden" checked>
+                            <span class="w-2 h-2 rounded-full bg-green-400" id="dot-real"></span> Real
+                        </label>
+                        <label
+                            class="cursor-pointer bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-2 py-1 rounded-full text-[10px] flex items-center gap-1 border border-white/10 select-none transition-colors">
+                            <input type="checkbox" id="toggle-ghost-skeleton" class="hidden">
+                            <span class="w-2 h-2 rounded-full bg-cyan-400" id="dot-ghost"></span> Ghost
+                        </label>
                     </div>
                     <div id="obstacle-alert"
                         class="hidden bg-red-500/90 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-medium items-center gap-1 animate-pulse">

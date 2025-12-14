@@ -74,16 +74,30 @@ export const Detectors = {
     },
 
     onPoseResults(results) {
-        Visualizer.update2D(results);
+        // 1. Get UI Toggle States
+        const showReal = document.getElementById('toggle-real-skeleton')?.checked ?? true;
+        const showGhost = document.getElementById('toggle-ghost-skeleton')?.checked ?? false;
+
+        // 2. Generate Prediction (Ghost)
+        let predictedLandmarks = null;
+        if (showGhost && results.poseLandmarks && previousLandmarks) {
+            predictedLandmarks = this.predictFuturePose(results.poseLandmarks);
+        }
+
+        // 3. Update Visualizer (Pass all data)
+        Visualizer.update2D(results, predictedLandmarks, showReal, showGhost);
 
         if (results.poseLandmarks) {
             const visibility = this.checkVisibility(results.poseLandmarks);
+
+            // ... (Rest of existing logic: visibility checks, analysis, etc.) 
+            // Note: We need to ensure we don't break the flow.
+            // Re-inserting the logic block that was cut off by replacement:
 
             if (visibility < VISIBILITY_THRESHOLD) {
                 lowVisibilityFrameCount++;
                 if (lowVisibilityFrameCount > 5) {
                     UI.updateStatus('Camera Blocked / Too Close', 'warning');
-                    // Safety Gate: Force Safe Metrics
                     UI.updateTelemetry({ risk: 0, stability: 100, envRisk: 0, spine: 'Unknown' });
                 }
             } else {
@@ -94,13 +108,34 @@ export const Detectors = {
             this.analyzePose(results.poseLandmarks, results.poseWorldLandmarks, visibility);
         } else {
             lowVisibilityFrameCount++;
-            // Reset metrics if no person
             UI.updateTelemetry({ risk: 0, stability: 0, envRisk: 0, spine: 'Good' });
-            fallFrameCount = 0; // Reset fall timer if person lost
+            fallFrameCount = 0;
         }
 
         const isFalling = fallFrameCount >= FALL_TRIGGER_FRAMES;
         Visualizer.update3D(results.poseWorldLandmarks, isFalling, false);
+    },
+
+    predictFuturePose(currentLandmarks) {
+        if (!previousLandmarks) return currentLandmarks;
+
+        // Simple Kinematic Extrapolation: Pos_future = Pos_current + (Velocity * Frames)
+        const PREDICTION_FRAMES = 15; // 0.5s @ 30fps
+        const DAMPING = 0.8; // Reduce jitter
+
+        return currentLandmarks.map((curr, i) => {
+            const prev = previousLandmarks[i];
+            const vx = (curr.x - prev.x) * DAMPING;
+            const vy = (curr.y - prev.y) * DAMPING;
+            const vz = (curr.z - prev.z) * DAMPING; // z is likely undefined in 2D landmarks but good to keep structure
+
+            return {
+                x: curr.x + (vx * PREDICTION_FRAMES),
+                y: curr.y + (vy * PREDICTION_FRAMES),
+                z: (curr.z || 0) + (vz || 0) * PREDICTION_FRAMES,
+                visibility: curr.visibility // Assume visibility stays similar
+            };
+        });
     },
 
     checkVisibility(landmarks) {
