@@ -143,10 +143,10 @@ export const Visualizer = {
     },
 
     update2D(results, predictedLandmarks = null, showReal = true, showGhost = false) {
-        if (!this.elements.ctx) return;
-        const ctx = this.elements.ctx;
-        const width = this.elements.canvas.width;
-        const height = this.elements.canvas.height;
+        if (!UI.elements.ctx) return;
+        const ctx = UI.elements.ctx;
+        const width = UI.elements.canvas.width;
+        const height = UI.elements.canvas.height;
 
         ctx.save();
         ctx.clearRect(0, 0, width, height);
