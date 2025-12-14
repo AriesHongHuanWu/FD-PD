@@ -5,6 +5,7 @@
 import { UI } from './ui.js';
 import { Visualizer } from './visualizer.js';
 import { Logger } from './logging.js';
+import { KalmanFilter } from './kalman.js';
 
 let poseDetector;
 let objectDetector;
@@ -16,6 +17,8 @@ let previousLandmarks = null;
 let previousVelocityY = 0;
 let fallFrameCount = 0;
 let lowVisibilityFrameCount = 0;
+
+let kalmanFilters = []; // Array of 33 KalmanFilters
 
 let currentEnvRisk = 0;
 
@@ -78,10 +81,36 @@ export const Detectors = {
         const showReal = document.getElementById('toggle-real-skeleton')?.checked ?? true;
         const showGhost = document.getElementById('toggle-ghost-skeleton')?.checked ?? false;
 
-        // 2. Generate Prediction (Ghost)
+        // 2. Kalman Filter Process
         let predictedLandmarks = null;
-        if (showGhost && results.poseLandmarks && previousLandmarks) {
-            predictedLandmarks = this.predictFuturePose(results.poseLandmarks);
+
+        if (results.poseLandmarks) {
+            // Initialize Filters if needed
+            if (kalmanFilters.length === 0) {
+                results.poseLandmarks.forEach(lm => {
+                    kalmanFilters.push(new KalmanFilter(lm));
+                });
+            }
+
+            // Predict & Update Steps
+            predictedLandmarks = results.poseLandmarks.map((lm, i) => {
+                const filter = kalmanFilters[i];
+
+                // 1. Predict (Project State)
+                filter.predict();
+
+                // 2. Update (Correct with Measurement)
+                filter.update(lm);
+
+                // 3. Forecast (15 frames ahead for Ghost)
+                if (showGhost) {
+                    // Clone result to avoid mutating filter state
+                    const future = filter.forecast(15);
+                    future.visibility = lm.visibility; // Copy visibility
+                    return future;
+                }
+                return null;
+            });
         }
 
         // 3. Update Visualizer (Pass all data)
@@ -89,10 +118,6 @@ export const Detectors = {
 
         if (results.poseLandmarks) {
             const visibility = this.checkVisibility(results.poseLandmarks);
-
-            // ... (Rest of existing logic: visibility checks, analysis, etc.) 
-            // Note: We need to ensure we don't break the flow.
-            // Re-inserting the logic block that was cut off by replacement:
 
             if (visibility < VISIBILITY_THRESHOLD) {
                 lowVisibilityFrameCount++;
@@ -114,28 +139,9 @@ export const Detectors = {
 
         const isFalling = fallFrameCount >= FALL_TRIGGER_FRAMES;
         Visualizer.update3D(results.poseWorldLandmarks, isFalling, false);
-    },
 
-    predictFuturePose(currentLandmarks) {
-        if (!previousLandmarks) return currentLandmarks;
-
-        // Simple Kinematic Extrapolation: Pos_future = Pos_current + (Velocity * Frames)
-        const PREDICTION_FRAMES = 15; // 0.5s @ 30fps
-        const DAMPING = 0.8; // Reduce jitter
-
-        return currentLandmarks.map((curr, i) => {
-            const prev = previousLandmarks[i];
-            const vx = (curr.x - prev.x) * DAMPING;
-            const vy = (curr.y - prev.y) * DAMPING;
-            const vz = (curr.z - prev.z) * DAMPING; // z is likely undefined in 2D landmarks but good to keep structure
-
-            return {
-                x: curr.x + (vx * PREDICTION_FRAMES),
-                y: curr.y + (vy * PREDICTION_FRAMES),
-                z: (curr.z || 0) + (vz || 0) * PREDICTION_FRAMES,
-                visibility: curr.visibility // Assume visibility stays similar
-            };
-        });
+        previousLandmarks = results.poseLandmarks; // Keep for other logic if needed, though KF handles history
+        lastPoseTime = Date.now();
     },
 
     checkVisibility(landmarks) {
@@ -148,7 +154,6 @@ export const Detectors = {
     analyzePose(landmarks, worldLandmarks, visibility) {
         // Strict Visibility Gate
         if (visibility < VISIBILITY_THRESHOLD) {
-            // Do not analyze if visibility is poor to avoid false positives
             return;
         }
 
@@ -162,31 +167,23 @@ export const Detectors = {
         const rightKneeAngle = this.calculateAngle(worldLandmarks[24], worldLandmarks[26], worldLandmarks[28]);
 
         // Detect Grounded Feet (Dynamic Logic)
-        // Previous fixed threshold fails if camera is far/close.
-        // Solution: Use Shin Length (Knee to Ankle distance) as a dynamic ruler.
-
-        // Calculate Shin Lengths (Euclidean distance)
         const getDist = (i1, i2) => Math.hypot(landmarks[i1].x - landmarks[i2].x, landmarks[i1].y - landmarks[i2].y);
         const leftShin = getDist(25, 27);
         const rightShin = getDist(26, 28);
         const avgShin = (leftShin + rightShin) / 2;
 
-        // Ground Level is the lowest ankle point
         const leftAnkleY = landmarks[27].y;
         const rightAnkleY = landmarks[28].y;
         const groundLevel = Math.max(leftAnkleY, rightAnkleY);
 
-        // Threshold is 30% of average shin length (adaptive to zoom/distance)
+        // Threshold is 30% of average shin length
         const DYNAMIC_THRESHOLD = avgShin * 0.3;
 
         const isLeftGrounded = leftAnkleY > (groundLevel - DYNAMIC_THRESHOLD);
         const isRightGrounded = rightAnkleY > (groundLevel - DYNAMIC_THRESHOLD);
 
-        // 2a. Climbing/Stepping Logic (Stable Elevated Foot Heuristic)
-        // If a foot is NOT grounded (lifted) but is STATIONARY, it's likely on a step/box.
-
+        // 2a. Climbing/Stepping Logic
         const checkFootStability = (footIndex, timer) => {
-            // Velocity check
             const curr = landmarks[footIndex];
             const prev = previousLandmarks ? previousLandmarks[footIndex] : curr;
             const vel = Math.hypot(curr.x - prev.x, curr.y - prev.y);
@@ -201,20 +198,16 @@ export const Detectors = {
         const isLeftSupported = isLeftGrounded || (leftFootStabilityTimer > STABILITY_FRAMES);
         const isRightSupported = isRightGrounded || (rightFootStabilityTimer > STABILITY_FRAMES);
 
-        // 2b. Sitting Detection (Object Overlap + Depth Check)
+        // 2b. Sitting Detection
         let isSitting = false;
         if (seatObjects.length > 0) {
             const hipX = (landmarks[23].x + landmarks[24].x) / 2;
             const hipY = (landmarks[23].y + landmarks[24].y) / 2;
-            const feetY = groundLevel; // Furthest down point of user
+            const feetY = groundLevel;
 
             for (const seat of seatObjects) {
-                // 2D Overlap: Hip inside box
                 const inBox = hipX > seat.bbox.x && hipX < (seat.bbox.x + seat.bbox.w) &&
                     hipY > seat.bbox.y && hipY < (seat.bbox.y + seat.bbox.h);
-
-                // Depth Alignment: Seat bottom approx same as Feet bottom?
-                // Threshold: 10% of screen height
                 const depthMatch = Math.abs(seat.bottomY - feetY) < 0.1;
 
                 if (inBox && depthMatch) {
@@ -228,13 +221,8 @@ export const Detectors = {
             UI.updateStatus('Sitting Detected (Load masked)', 'success');
         }
 
-        // 3. Dynamic Impact Logic (F=ma Proxy)
+        // 3. Dynamic Impact Logic
         const impactFactor = this.calculateImpact(landmarks);
-
-        // UI Updates: 
-        // If Sitting: Force 180 (Zero Load).
-        // If Supported (Ground or Step): Show Angle.
-        // If Air (Unsupported): Force 180.
 
         let uiLeftAngle = 180;
         let uiRightAngle = 180;
@@ -246,15 +234,14 @@ export const Detectors = {
 
         UI.updateKneePressure(uiLeftAngle, uiRightAngle, impactFactor);
 
-        // 3. New Metrics Calculations
+        // 3. New Metrics
         const stabilityScore = this.calculateStability(landmarks);
         const spineHealth = this.calculateSpineHealth(landmarks);
 
-        // 4. Composite Fall Risk Calculation
-        // Calculate effective angle based on LOADED legs only
-        let effectiveAngle = 180; // Default safe
+        // 4. Composite Fall Risk
+        let effectiveAngle = 180;
         if (isSitting) {
-            effectiveAngle = 180; // Safe
+            effectiveAngle = 180;
         } else {
             if (isLeftSupported && isRightSupported) {
                 effectiveAngle = Math.min(leftKneeAngle, rightKneeAngle);
@@ -264,29 +251,20 @@ export const Detectors = {
                 effectiveAngle = rightKneeAngle;
             }
         }
-        // If in air/unsupported, effectiveAngle stays 180 (Safe)
-        // If both in air, we default to 180 (Safe) unless Impact Factor is high?
-        // Actually impact factor is separate multiplier in UI, but for Risk Index:
-        // Jumping isn't necessarily "High Pressure" until landing.
 
-        // Hand support modifier
         if (handSupport) effectiveAngle += 30;
 
-        const kneeRisk = Math.max(0, (140 - effectiveAngle)); // 0 to ~100
-        const stabilityRisk = 100 - stabilityScore; // 0 to 100
-        const envRisk = currentEnvRisk * 100; // 0 to 100
+        const kneeRisk = Math.max(0, (140 - effectiveAngle));
+        const stabilityRisk = 100 - stabilityScore;
+        const envRisk = currentEnvRisk * 100;
 
-        // Weighted Sum
-        // Knee: 30%, Stability: 40%, Env: 20%, Base: 10%
         let riskIndex = (kneeRisk * 0.3) + (stabilityRisk * 0.4) + (envRisk * 0.2);
 
-        // Dynamic Boosters
-        if (this.checkFreefall(landmarks)) riskIndex = 100; // Immediate override
+        if (this.checkFreefall(landmarks)) riskIndex = 100;
         if (spineHealth === 'Poor') riskIndex += 10;
 
         riskIndex = Math.min(100, Math.max(0, riskIndex));
 
-        // Telemetry Update
         UI.updateTelemetry({
             risk: riskIndex,
             stability: stabilityScore,
@@ -294,90 +272,54 @@ export const Detectors = {
             spine: spineHealth
         });
 
-        // Logger Triggers
         if (riskIndex > 85 && Math.random() < 0.05) {
             Logger.add('warning', 'High Fall Risk', `Risk Index: ${Math.round(riskIndex)}%`);
         }
 
-        // 5. Fall Detection (Requires persistence)
+        // 5. Fall Detection
         const isFallen = this.checkFall(landmarks);
 
-        // Require strictly high risk OR geometric fall for sustained time
         if (isFallen || riskIndex >= 95) {
             fallFrameCount++;
-            if (fallFrameCount === FALL_TRIGGER_FRAMES) { // Trigger AFTER ~2 seconds
+            if (fallFrameCount === FALL_TRIGGER_FRAMES) {
                 Logger.add('error', 'FALL DETECTED', `Risk: ${Math.round(riskIndex)}%`);
                 UI.toggleFallOverlay(true);
             }
         } else {
-            // Decay frame count slowly instead of instant reset to handle flicker? 
-            // Or instant reset for strictness? Instant is better for ensuring 2s CONTINUOUS fall.
             fallFrameCount = 0;
         }
 
         this.predictNextAction(landmarks);
-
-        previousLandmarks = landmarks;
-        lastPoseTime = Date.now();
     },
 
     calculateImpact(landmarks) {
         if (!previousLandmarks) return 1.0;
-
-        // Hip Center Velocity Y
         const currentHipY = (landmarks[23].y + landmarks[24].y) / 2;
         const prevHipY = (previousLandmarks[23].y + previousLandmarks[24].y) / 2;
-
-        // Positive dy = Moving Downwards
         const dy = currentHipY - prevHipY;
-
-        // Thresholds for "Impact"
-        // Normal walking dy ~ 0.005
-        // Jump landing dy ~ 0.02 - 0.05
-
-        if (dy > 0.015) { // Fast downward movement
-            // Amplify factor based on speed
-            // Map 0.015 -> 1.0, 0.05 -> 2.0
+        if (dy > 0.015) {
             return 1.0 + ((dy - 0.015) * 30);
         }
-
         return 1.0;
     },
 
     calculateStability(landmarks) {
-        // Horizontal distance between Hip Center (COG approx) and Midpoint between Ankles (Base of support)
         const hipX = (landmarks[23].x + landmarks[24].x) / 2;
         const ankleX = (landmarks[27].x + landmarks[28].x) / 2;
-
-        // Normalized Deviation (0 to 0.5 usually)
         const deviation = Math.abs(hipX - ankleX);
-
-        // Map deviation to 0-100 Score. 
-        // 0 deviation = 100 stability. 
-        // 0.2 deviation = 0 stability (Leaning way out)
-
         const score = Math.max(0, 100 - (deviation * 500));
         return score;
     },
 
     calculateSpineHealth(landmarks) {
-        // Angle between Hip-Shoulder vector and Vertical
         const shoulderX = (landmarks[11].x + landmarks[12].x) / 2;
         const shoulderY = (landmarks[11].y + landmarks[12].y) / 2;
         const hipX = (landmarks[23].x + landmarks[24].x) / 2;
         const hipY = (landmarks[23].y + landmarks[24].y) / 2;
-
         const dx = shoulderX - hipX;
         const dy = shoulderY - hipY;
-
-        // Angle from vertical (Y axis)
-        // atan2(dx, dy) -> 0 if vertical
         const angleRad = Math.atan2(dx, dy);
         const angleDeg = Math.abs(angleRad * 180 / Math.PI);
-
-        // If bent forward > 45 degrees, potentially poor posture (Stoop)
-        // Note: Squatting keeps back straight (angle near 0). Stooping bends back (angle > 40).
-
         if (angleDeg > 45) return 'Poor';
         return 'Good';
     },
@@ -422,31 +364,26 @@ export const Detectors = {
         const height = UI.elements.video.videoHeight;
         if (width === 0) return;
 
-        seatObjects = []; // Reset for this frame
+        seatObjects = [];
 
         predictions.forEach(pred => {
-            // Normalize bbox to 0-1
             const bx = pred.bbox[0] / width;
             const by = pred.bbox[1] / height;
             const bw = pred.bbox[2] / width;
             const bh = pred.bbox[3] / height;
             const bottomY = by + bh;
 
-            // Track Seats
             if (['chair', 'couch', 'bench', 'bed'].includes(pred.class)) {
                 seatObjects.push({
                     bbox: { x: bx, y: by, w: bw, h: bh },
                     bottomY: bottomY,
                     class: pred.class
                 });
-                return; // Don't treat seats as instantaneous tripping hazards (maybe?)
-                // Actually, if you trip on a chair it IS a hazard.
-                // But specifically for 'Sitting vs Hazard', let's separate.
+                return;
             }
 
             if (pred.class === 'person') return;
 
-            // Standard Obstacle Logic
             const boxCenter = { x: bx + bw / 2, y: by + bh / 2 };
             const dist = Math.hypot(boxCenter.x - feetX, boxCenter.y - feetY);
 
@@ -456,9 +393,7 @@ export const Detectors = {
             }
         });
 
-        // Update Risk Factor
-        currentEnvRisk = obstacleDetected ? 0.8 : 0; // High risk if object near
-
+        currentEnvRisk = obstacleDetected ? 0.8 : 0;
         UI.showObstacleWarning(obstacleDetected, obstacleObj ? obstacleObj.class : '');
 
         if (obstacleDetected && obstacleObj) {
@@ -474,19 +409,15 @@ export const Detectors = {
         const rightShoulder = landmarks[12];
         const leftHip = landmarks[23];
         const rightHip = landmarks[24];
-
         const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
         const hipY = (leftHip.y + rightHip.y) / 2;
         const shoulderX = (leftShoulder.x + rightShoulder.x) / 2;
         const hipX = (leftHip.x + rightHip.x) / 2;
-
         const dx = shoulderX - hipX;
         const dy = shoulderY - hipY;
-
         const angle = Math.atan2(Math.abs(dy), Math.abs(dx)) * (180 / Math.PI);
         const isHorizontal = angle < 45;
         const isLow = hipY > 0.5;
-
         return isHorizontal && isLow;
     },
 
@@ -495,44 +426,26 @@ export const Detectors = {
             UI.updatePrediction("Analyzing...");
             return;
         }
-
         const currentHipY = (landmarks[23].y + landmarks[24].y) / 2;
         const prevHipY = (previousLandmarks[23].y + previousLandmarks[24].y) / 2;
-        const currentHipX = (landmarks[23].x + landmarks[24].x) / 2;
-        const prevHipX = (previousLandmarks[23].x + previousLandmarks[24].x) / 2;
-
         const vy = currentHipY - prevHipY;
-        const vx = currentHipX - prevHipX;
-
         const MOVEMENT_THRESH = 0.005;
         let prediction = "Stable";
-
         if (Math.abs(vy) > MOVEMENT_THRESH) {
             if (vy > 0) prediction = "Lowering / Sitting";
             else prediction = "Standing Up";
-        } else if (Math.abs(vx) > MOVEMENT_THRESH) {
-            prediction = "Walking";
         }
-
         UI.updatePrediction(prediction);
     },
 
     calculateAngle(a, b, c) {
         if (!a || !b || !c) return 180;
-
-        // Use 3D vector calculation if z is available (World Landmarks)
-        // Cosine Rule: C^2 = A^2 + B^2 - 2AB*cos(gamma)
-        // Vector approach: dot(BA, BC) / (|BA| * |BC|)
-
         const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
         const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
-
         const dot = (v1.x * v2.x) + (v1.y * v2.y) + (v1.z * v2.z);
         const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
         const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
-
         if (mag1 * mag2 === 0) return 180;
-
         let angleRad = Math.acos(dot / (mag1 * mag2));
         return angleRad * (180.0 / Math.PI);
     }
