@@ -18,63 +18,99 @@
 
 ```mermaid
 flowchart TD
-    subgraph Main ["主迴圈 (js/main.js)"]
+    subgraph Main ["主程式 (js/main.js)"]
         direction TB
-        Start(["Webcam Input <br/> (影像輸入)"]) --> Loop["loop() <br/> (動畫迴圈)"]
-        Loop --> Process["Detectors.processFrame() <br/> (呼叫偵測處理)"]
+        Start(["Webcam Input <br/> (影像輸入)"]) --> Loop["requestAnimationFrame(loop) <br/> (動畫迴圈)"]
+        Loop --> Process["Detectors.processFrame(video) <br/> (呼叫偵測處理)"]
     end
 
-    subgraph Detectors ["AI 處理核心 (js/detectors.js)"]
+    subgraph Detectors ["偵測器核心 (js/detectors.js)"]
         direction TB
-        Process --> PoseModel["MediaPipe Pose (.send) <br/> (姿態偵測模型)"]
-        Process -->|每 10 幀| ObjModel["Coco-SSD Object Detection <br/> (物件偵測模型)"]
+        Process --> PoseModel["poseDetector.send({image}) <br/> (MediaPipe Pose 推論)"]
+        Process -->|lowVisibility < 10| ObjModel["objectDetector.detect() <br/> (Coco-SSD 物件偵測)"]
         
-        ObjModel --> ObjLogic{"analyzeObstacles() <br/> (分析障礙物)"}
-        ObjLogic -->|Detected (偵測到)| EnvRiskYes["currentEnvRisk = 0.8 <br/> (設定環境風險)"]
+        ObjModel --> ObjLogic{"analyzeObstacles(predictions) <br/> (分析障礙物)"}
+        ObjLogic -->|Class: chair/couch| SeatList["seatObjects.push() <br/> (記錄椅子位置)"]
+        ObjLogic -->|Dist < 0.2 & Y > 0.5| EnvRiskYes["currentEnvRisk = 0.8 <br/> (設定環境風險)"]
         
-        PoseModel --> OnRes["onPoseResults() <br/> (接收偵測結果)"]
+        PoseModel --> OnRes["onPoseResults(results) <br/> (接收偵測結果)"]
         
-        OnRes --> KalmanCall["Kalman Filter (js/kalman.js) <br/> (呼叫卡爾曼濾波)"]
-        KalmanCall --> Smooth["Get Smoothed Coordinates <br/> (取得平滑座標)"]
+        OnRes --> KalmanInit{"kalmanFilters.length == 0?"}
+        KalmanInit -->|Yes| KNew["new KalmanFilter(lm) <br/> (為 33 個點建立濾波器)"]
         
-        Smooth --> VisGate{"verifyVisibility() <br/> (全身可見度 > 0.6?)"}
-        VisGate -->|No| Reject["lowVisibilityFrameCount++ <br/> (累計低可見度，暫停分析)"]
-        VisGate -->|Yes| AnalysisEntry["呼叫 analyzePose() <br/> (進入詳細分析)"]
+        KalmanInit -->|No| KPredict["filter.predict() <br/> (預測下一幀位置)"]
+        KPredict --> KUpdate["filter.update(lm) <br/> (使用偵測值修正)"]
+        KUpdate --> Smooth["predictedLandmarks <br/> (取得平滑座標)"]
+        
+        Smooth --> VisCalc["checkVisibility() <br/> (計算平均可見度)"]
+        VisCalc --> VisGate{"visibility < 0.6?"}
+        VisGate -->|Yes| RejCount["lowVisibilityFrameCount++"]
+        RejCount --> RejAct["UI.updateStatus('Camera Blocked') <br/> (暫停分析)"]
+        
+        VisGate -->|No| AnalysisEntry["analyzePose() <br/> (進入詳細分析)"]
     end
     
-    subgraph AnalysisCore ["核心分析邏輯 (js/detectors.js: analyzePose)"]
+    subgraph AnalyzePose ["核心分析邏輯 (js/detectors.js: analyzePose)"]
         direction TB
         
-        AnalysisEntry --> Step1["1. Support Detection <br/> (手部支撐偵測)"]
-        Step1 --> CheckHand["checkHandSupport() <br/> (手腕-膝蓋距離 < 0.15?)"]
+        AnalysisEntry --> HandSup["checkHandSupport()"]
+        HandSup --> HandCheck{"Dist(Wrist[15/16], Knee[25/26]) < 0.15?"}
+        HandCheck --Yes--> HandTrue["handSupport = true"]
         
-        Step1 --> Step2["2. Grounding & Knee <br/> (著地與膝蓋分析)"]
-        Step2 --> KneeCalc["calculateAngle() <br/> (計算 3D 膝蓋角度)"]
-        Step2 --> GroundCalc["Ground Check <br/> (腳踝 Y > 地面閾值?)"]
+        HandTrue --> KneeLogic["2. Knee & Ground Output"]
+        HandCheck --No--> KneeLogic
         
-        Step2 --> Step3["3. Sitting Logic <br/> (坐姿判斷)"]
-        Step3 --> SitCheck{"isSitting? <br/> (臀部位於椅子範圍內?)"}
-        SitCheck -->|Yes| SitState["Mask Knee Load <br/> (忽略膝蓋負載)"]
-        SitCheck -->|No| StandState["Calculate Knee Load <br/> (計算膝蓋負載)"]
+        subgraph KneeDetail ["膝蓋與著地細節"]
+           KneeLogic --> CalcAng["calculateAngle(WorldLandmarks)"]
+           CalcAng --> LAng["Left: 23(Hip)-25(Knee)-27(Ankle)"]
+           CalcAng --> RAng["Right: 24(Hip)-26(Knee)-28(Ankle)"]
+           
+           LAng --> GroundMath["Ground Threshold = avgShin * 0.3"]
+           GroundMath --> GroundCond{"AnkleY > (GroundLevel - Threshold)?"}
+           GroundCond --Yes--> GroundTrue["isGrounded = true"]
+           
+           GroundTrue --> StableTimer{"Velocity < 0.002?"}
+           StableTimer --Yes--> StableInc["timer++"]
+           StableInc --> StableFinal{"timer > 10 frames?"}
+           StableFinal --Yes--> IsSupported["isSupported = true <br/> (有效支撐)"]
+        end
         
-        Step3 --> Step4["4. Metrics <br/> (其他指標)"]
-        Step4 --> CalcStab["calculateStability() <br/> (重心 X vs 腳踝中心 X)"]
-        Step4 --> CalcSpine["calculateSpineHealth() <br/> (肩膀-臀部傾角 > 45d?)"]
+        IsSupported --> SitLogic["3. Sitting Detection"]
+        SitLogic --> SitBox{"Hip[23/24] inside SeatBBox?"}
+        SitBox --Yes--> SitTrue["isSitting = true <br/> (忽略膝蓋負載)"]
+        SitBox --No--> SitFalse["isSitting = false <br/> (計算膝蓋負載)"]
         
-        Step4 --> Step5["5. Risk Calculation <br/> (風險計算)"]
-        Step5 --> Formula["riskIndex = <br/> (膝蓋*0.3 + 穩定*0.4 + 環境*0.2)"]
-        Formula --> FreeFall{"checkFreefall()? <br/> (垂直加速度 > 0.015?)"}
-        FreeFall -->|Yes| MaxRisk["riskIndex = 100 <br/> (強制最高風險)"]
+        SitFalse --> ImpactCalc["calculateImpact()"]
+        ImpactCalc --> ImpMath{"dy (Hip Velocity) > 0.015?"}
+        ImpMath --Yes--> ImpFactor["factor = 1 + (dy-0.015)*30"]
         
-        Step5 --> Step6["6. Fall Trigger <br/> (跌倒觸發)"]
-        Step6 --> GeomFall{"checkFall()? <br/> (角度<45d 且 臀部Y>0.5?)"]
+        ImpFactor --> MetricCalc["4. Calculate Metrics"]
+        MetricCalc --> StabScore["calculateStability() <br/> (100 - |HipX - AnkleX| * 500)"]
+        MetricCalc --> SpineScore["calculateSpineHealth() <br/> (Shoulder-Hip Angle > 45?)"]
+        
+        SpineScore --> RiskCalc["5. Risk Index"]
+        RiskCalc --> RiskForm["Index = <br/> (KneeRisk * 0.3) <br/> + (StabilityRisk * 0.4) <br/> + (EnvRisk * 0.2)"]
+        
+        RiskForm --> FFCheck{"checkFreefall()? <br/> (Accel > 0.015 & dy > 0.02)"}
+        FFCheck --Yes--> RiskMax["Index = 100"]
+        
+        RiskMax --> FallGate["6. Fall Trigger"]
+        RiskForm --> FallGate
+        
+        FallGate --> GeomCheck{"checkFall()? <br/> (BodyAngle < 45 & HipY > 0.5)"}
     end
     
     subgraph UI ["使用者介面 (js/ui.js)"]
-        CalcRisk --> UpdateTel["updateTelemetry() <br/> (更新圓環/進度條)"]
-        GeomFall --> IsFallen{"isFallen || risk > 95% <br/> (發生跌倒或高風險?)"}
-        IsFallen -->|Yes| FallCount["fallFrameCount++ <br/> (累計跌倒影格)"]
-        FallCount -->|Count >= 60| Alert["UI.toggleFallOverlay(true) <br/> (顯示紅色警報!)"]
+        GeomCheck --> FinalGate{"isFallen || riskIndex > 95%"}
+        FinalGate --Yes--> FallInc["fallFrameCount++"]
+        FallInc --> AlertGate{"count >= 60?"}
+        AlertGate --Yes--> ShowAlert["UI.toggleFallOverlay(true) <br/> (紅色警報)"]
+        
+        FinalGate --No--> FallReset["fallFrameCount = 0"]
+        
+        RiskForm --> UIRender["UI.updateTelemetry()"]
+        UIRender --> Render1["Risk Circle (SVG DashOffset)"]
+        UIRender --> Render2["Stability Bar (Width %)"]
     end
 ```
 
