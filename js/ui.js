@@ -1,6 +1,8 @@
 /**
  * UI Module
+ * 使用者介面模組
  * Handles all DOM updates and user feedback.
+ * 負責所有 DOM 更新與使用者回饋。
  */
 
 export const UI = {
@@ -49,15 +51,21 @@ export const UI = {
 
     updateKneePressure(leftAngle, rightAngle, impactFactor = 1.0) {
         // ImpactFactor: Multiply "Pressure" logic. 
+        // 衝擊因子：放大「壓力」計算邏輯。
         // Normal pressure (0-100 score based on angle).
+        // 正常壓力 (基於角度的 0-100 分數)。
         // If impact > 1.0, pressure score boosts up. 
+        // 如果衝擊力 > 1.0，壓力分數會上升。 
 
         const getBarData = (angle, impact) => {
             // Base pressure from angle (Lower angle = Higher pressure)
+            // 基於角度的基礎壓力 (角度越小 = 壓力越大)
             // 180deg = 0 pressure. 90deg = High pressure.
+            // 180度 = 0 壓力. 90度 = 高壓力.
             let pressure = Math.max(0, Math.min(100, (180 - angle) / 0.9)); // Scale 180-90 -> 0-100 approx
 
             // Apply Impact Multiplier (e.g. landing from jump)
+            // 套用衝擊加乘 (例如：從跳躍著地)
             pressure *= impact;
             pressure = Math.min(100, pressure);
 
@@ -125,6 +133,7 @@ export const UI = {
         // data: { risk: 0-100, stability: 0-100, envRisk: 0-100, spine: 'Good'|'Poor' }
 
         // Update Risk Circle (DashOffset: 226 = 0%, 0 = 100%)
+        // 更新風險圓圈 (DashOffset: 226 代表 0%, 0 代表 100%)
         const offset = 226 - (data.risk / 100 * 226);
         this.elements.riskCircle.style.strokeDashoffset = offset;
         this.elements.riskValue.textContent = `${Math.round(data.risk)}%`;

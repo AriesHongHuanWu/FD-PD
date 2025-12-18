@@ -1,6 +1,8 @@
 /**
  * Logger Module
+ * 日誌記錄模組
  * Handles recording and retrieval of system events.
+ * 負責記錄和檢索系統事件。
  */
 import { UI } from './ui.js';
 
@@ -13,7 +15,7 @@ export const Logger = {
         const event = {
             id: Date.now(),
             time: timestamp.toLocaleTimeString(),
-            type: type, // 'info', 'warning', 'error', 'success'
+            type: type, // 'info' (資訊), 'warning' (警告), 'error' (錯誤), 'success' (成功)
             message: message,
             details: details
         };
@@ -26,6 +28,7 @@ export const Logger = {
         UI.addLogEntry(event);
 
         // Auto-save important events?
+        // 自動儲存重要事件?
         if (type === 'error') {
             this.saveToStorage();
         }

@@ -29,6 +29,7 @@
     </script>
 
     <!-- 3D & AI Libraries -->
+    <!-- 3D 與 AI 函式庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
@@ -41,6 +42,7 @@
 <body class="bg-slate-50 text-slate-900 font-sans h-screen flex flex-col overflow-hidden">
 
     <!-- Top Bar (Google Style) -->
+    <!-- 頂部導航欄 (Google 風格) -->
     <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shrink-0 z-50">
         <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-blue-600 text-3xl">health_metrics</span>
@@ -62,11 +64,14 @@
     </header>
 
     <!-- Main Content Grid -->
+    <!-- 主要內容網格佈局 -->
     <main class="flex-1 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto lg:overflow-hidden">
 
         <!-- Left Column: Primary Feed (Allocated more space) -->
+        <!-- 左欄：主要影像串流 (佔據較多空間) -->
         <section class="lg:col-span-8 flex flex-col gap-4 h-full">
             <!-- Video Card -->
+            <!-- 視訊卡片區塊 -->
             <div
                 class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden relative flex-1 flex flex-col">
                 <div class="absolute top-4 left-6 z-10 flex gap-2">
@@ -112,9 +117,11 @@
         </section>
 
         <!-- Right Column: Analytics & 3D -->
+        <!-- 右欄：分析數據與 3D 視圖 -->
         <section class="lg:col-span-4 flex flex-col gap-4 h-full overflow-y-auto no-scrollbar pb-20 md:pb-0">
 
             <!-- Real-time Telemetry Card -->
+            <!-- 即時遙測數據卡片 -->
             <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-4">
                 <div class="flex items-center justify-between border-b border-gray-100 pb-3">
                     <h3 class="text-lg font-medium text-gray-800 flex items-center gap-2">
@@ -209,6 +216,7 @@
             </div>
 
             <!-- Event History Card -->
+            <!-- 事件歷史記錄卡片 -->
             <div
                 class="bg-white rounded-3xl shadow-sm border border-gray-200 p-5 flex flex-col gap-4 flex-1 min-h-[200px]">
                 <div class="flex items-center justify-between">
@@ -224,6 +232,7 @@
             </div>
 
             <!-- 3D View (Moved to bottom or toggle? User wants everything. Let's keep it but make it compact) -->
+            <!-- 3D 視圖 (即使很小也要保留) -->
             <div
                 class="bg-slate-900 rounded-3xl shadow-sm overflow-hidden h-40 shrink-0 relative border border-gray-700">
                 <div id="three-container" class="w-full h-full"></div>

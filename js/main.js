@@ -1,5 +1,6 @@
 /**
  * Main Application Entry Point
+ * 主應用程式入口點
  */
 import { UI } from './ui.js';
 import { Visualizer } from './visualizer.js';
@@ -9,12 +10,15 @@ async function main() {
     console.log("FallGuard AI Starting...");
 
     // 1. Initialize Visualizer (Three.js)
+    // 1. 初始化視覺化模組 (Three.js)
     Visualizer.init();
 
     // 2. Initialize Detectors (AI Models)
+    // 2. 初始化偵測器 (AI 模型)
     await Detectors.init();
 
     // 3. Start Camera Setup
+    // 3. 啟動相機設定
     setupCamera();
 }
 
@@ -39,6 +43,7 @@ async function setupCamera() {
                 video.play();
                 UI.resize();
                 // Start Processing Loop
+                // 開始處理迴圈
                 requestAnimationFrame(loop);
             };
         } catch (err) {
@@ -64,6 +69,7 @@ async function loop() {
     const video = UI.elements.video;
 
     if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+        // 確保影片已有數據
         await Detectors.processFrame(video);
     }
 

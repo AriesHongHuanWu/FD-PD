@@ -1,6 +1,8 @@
 /**
  * Visualizer Module
+ * 視覺化模組
  * Handles Three.js 3D rendering and 2D Canvas overlays.
+ * 負責 Three.js 3D 渲染與 2D Canvas 疊加層。
  */
 import { UI } from './ui.js';
 
@@ -10,11 +12,12 @@ const skeletonLines = [];
 let obstacleMesh;
 
 // Standard MediaPipe Pose Connections
+// 標準 MediaPipe 姿態連線定義
 const POSE_CONNECTIONS = [
-    [11, 12], [11, 23], [12, 24], [23, 24], // Torso
-    [11, 13], [13, 15], [12, 14], [14, 16], // Arms
-    [23, 25], [25, 27], [24, 26], [26, 28], // Legs
-    [27, 29], [28, 30] // Feet
+    [11, 12], [11, 23], [12, 24], [23, 24], // Torso (軀幹)
+    [11, 13], [13, 15], [12, 14], [14, 16], // Arms (手臂)
+    [23, 25], [25, 27], [24, 26], [26, 28], // Legs (腿部)
+    [27, 29], [28, 30] // Feet (腳部)
 ];
 
 // Helper for angle calculation (Duplicate for independent viz logic)
@@ -153,6 +156,7 @@ export const Visualizer = {
         ctx.drawImage(results.image, 0, 0, width, height);
 
         // Draw Ghost Skeleton (Background layer)
+        // 繪製 Ghost 骨架 (背景層 - 預測的未來狀態)
         if (showGhost && predictedLandmarks) {
             this.drawSkeleton(ctx, predictedLandmarks, {
                 lineColor: '#00e5ff', // Cyan-400
@@ -164,8 +168,10 @@ export const Visualizer = {
         }
 
         // Draw Real Skeleton
+        // 繪製真實骨架
         if (results.poseLandmarks && showReal) {
             // Draw Connectors & Landmarks using helper
+            // 使用輔助函式繪製連線與關鍵點
             this.drawSkeleton(ctx, results.poseLandmarks, {
                 lineColor: 'rgba(14, 165, 233, 0.8)', // Sky-500
                 lineWidth: 4,
@@ -174,6 +180,7 @@ export const Visualizer = {
             });
 
             // Draw AR Knee Indicators (Only on Real Skeleton)
+            // 繪製 AR 膝蓋負載指示器 (僅顯示於真實骨架上)
             this.drawKneeIndicators(results.poseLandmarks);
         }
 

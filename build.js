@@ -1,3 +1,9 @@
+/**
+ * Build Script
+ * 建置腳本
+ * Moves files to /dist folder for deployment.
+ * 將檔案移動到 /dist 資料夾以進行部署。
+ */
 const fs = require('fs');
 const path = require('path');
 

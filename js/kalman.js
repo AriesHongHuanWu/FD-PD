@@ -1,13 +1,17 @@
 /**
+/**
  * Kalman Filter for 3D Point Tracking (Constant Velocity Model)
- * State: [x, y, z, vx, vy, vz]
+ * 3D 點追蹤的卡爾曼濾波器 (等速模型)
+ * State (狀態向量): [x, y, z, vx, vy, vz] (位置 + 速度)
  */
 export class KalmanFilter {
     constructor(initialState = { x: 0, y: 0, z: 0 }) {
         // State Vector [x, y, z, vx, vy, vz]
+        // 初始狀態向量 [位置x, 位置y, 位置z, 速度x, 速度y, 速度z]
         this.x = [initialState.x, initialState.y, initialState.z, 0, 0, 0];
 
         // Error Covariance Matrix (P) - Identity * large
+        // 誤差共變異矩陣 (P) - 初始設為單位矩陣 (表示對初始狀態的不確定性)
         this.P = [
             [1, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0],
@@ -18,7 +22,8 @@ export class KalmanFilter {
         ];
 
         // Process Noise (Q) - Uncertainty in model (can speed change?)
-        const qVal = 0.01; // Tunable
+        // 過程雜訊 (Q) - 模型的不確定性 (例如：速度是否會突然改變？)
+        const qVal = 0.01; // Tunable (可調參數)
         this.Q = [
             [qVal, 0, 0, 0, 0, 0],
             [0, qVal, 0, 0, 0, 0],
@@ -29,7 +34,8 @@ export class KalmanFilter {
         ];
 
         // Measurement Noise (R) - Uncertainty in sensor (Webcam Jitter)
-        const rVal = 0.05; // Tunable (Higher = Trust model more/smoother, Lower = Trust sensor/faster)
+        // 量測雜訊 (R) - 感測器的不確定性 (例如：Webcam 的抖動)
+        const rVal = 0.05; // Tunable (數值越高 = 越信任模型/更平滑; 數值越低 = 越信任感測器/反應更快)
         this.R = [
             [rVal, 0, 0],
             [0, rVal, 0],
@@ -37,6 +43,7 @@ export class KalmanFilter {
         ];
 
         // Measurement Matrix (H) - We measure x, y, z
+        // 量測矩陣 (H) - 我們只能直接測量到 x, y, z (無法直接測量速度)
         this.H = [
             [1, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0],
@@ -46,7 +53,8 @@ export class KalmanFilter {
 
     /**
      * Prediction Step (Project state ahead)
-     * F = State Transition (Pos += Vel * dt)
+     * 預測步驟 (推算下一時刻的狀態)
+     * F = State Transition (Pos += Vel * dt) (狀態轉移：位置 = 原位置 + 速度 * 時間)
      */
     predict() {
         // F matrix (dt = 1 frame assumed for simplicity in unit steps)
@@ -81,9 +89,10 @@ export class KalmanFilter {
 
     /**
      * Correction Step (Update with measurement)
-     * K = P * H^T * (H * P * H^T + R)^-1
-     * x = x + K * (z - H*x)
-     * P = (I - K * H) * P
+     * 修正步驟 (使用實際量測值來更新預測)
+     * K = P * H^T * (H * P * H^T + R)^-1  (卡爾曼增益)
+     * x = x + K * (z - H*x)               (更新狀態)
+     * P = (I - K * H) * P                 (更新誤差共變異)
      */
     update(measurement) {
         // z = measurement [mx, my, mz]
@@ -109,12 +118,11 @@ export class KalmanFilter {
         // Let's rely on a simpler "Alpha-Beta Filter" approach which is a steady-state Kalman Filter
         // or just hardcode the gain logic properly.
 
-        // Let's do scalar updates for X, Y, Z independently to avoid complexity.
-        // It's statistically valid if dimensions are independent.
-
-        this.updateScalar(0, z[0]); // X
-        this.updateScalar(1, z[1]); // Y
-        this.updateScalar(2, z[2]); // Z
+        // 對 X, Y, Z 三個維度分別進行標量更新 (Scalar Update) 以避免複雜的矩陣運算
+        // 假設各維度獨立，這在 3D 點追蹤中為可接受的簡化
+        this.updateScalar(0, z[0]); // X 軸更新
+        this.updateScalar(1, z[1]); // Y 軸更新
+        this.updateScalar(2, z[2]); // Z 軸更新
     }
 
     updateScalar(idx, measuredVal) {
@@ -149,7 +157,8 @@ export class KalmanFilter {
 
     /**
      * Forecast future state
-     * @param {number} frames 
+     * 預測未來狀態 (用於 Ghost 骨架顯示)
+     * @param {number} frames 預測多少幀之後
      */
     forecast(frames) {
         return {

@@ -1,6 +1,8 @@
 /**
  * Detectors Module
+ * 偵測器模組
  * Handles AI Logic: Pose, Object Detection, Knee Analysis, Predictions, Probability Metrics
+ * 處理 AI 邏輯：姿態偵測、物件偵測、膝蓋分析、預測、機率指標
  */
 import { UI } from './ui.js';
 import { Visualizer } from './visualizer.js';
@@ -23,9 +25,10 @@ let kalmanFilters = []; // Array of 33 KalmanFilters
 let currentEnvRisk = 0;
 
 // Environmental Context
-let seatObjects = []; // { bbox: [x, y, w, h], class: str, bottomY: float }
-let leftFootStabilityTimer = 0;
-let rightFootStabilityTimer = 0;
+// 環境上下文
+let seatObjects = []; // { bbox: [x, y, w, h], class: str, bottomY: float } (坐具物件)
+let leftFootStabilityTimer = 0; // 左腳穩定計時器
+let rightFootStabilityTimer = 0; // 右腳穩定計時器
 
 const FALL_TRIGGER_FRAMES = 60; // ~2 seconds @ 30fps
 const STABILITY_FRAMES = 10; // ~0.3s to confirm "Stable Step"
@@ -60,12 +63,14 @@ export const Detectors = {
     },
 
     async processFrame(videoElement) {
+        // 處理每一幀影像
         if (!isSystemActive) return;
 
         await poseDetector.send({ image: videoElement });
 
         if (objectDetector && videoElement.readyState === 4 && lowVisibilityFrameCount < 10) {
             // Run object detection less frequently to check environment hazard level
+            // 降低物件偵測頻率以檢查環境危害等級 (為了效能)
             // Just for demo, we run it. Logic handles throttling or basic checks inside analyzeObstacles
             const predictions = await objectDetector.detect(videoElement);
             this.analyzeObstacles(predictions);
@@ -78,10 +83,12 @@ export const Detectors = {
 
     onPoseResults(results) {
         // 1. Get UI Toggle States
+        // 1. 取得 UI 開關狀態
         const showReal = document.getElementById('toggle-real-skeleton')?.checked ?? true;
         const showGhost = document.getElementById('toggle-ghost-skeleton')?.checked ?? false;
 
         // 2. Kalman Filter Process
+        // 2. 卡爾曼濾波處理 (平滑化骨架)
         let predictedLandmarks = null;
 
         if (results.poseLandmarks) {
@@ -141,6 +148,7 @@ export const Detectors = {
         Visualizer.update3D(results.poseWorldLandmarks, isFalling, false);
 
         previousLandmarks = results.poseLandmarks; // Keep for other logic if needed, though KF handles history
+        // 保存當前 landmarks 供下一幀比較 (KF 也有處理歷史，但這裡用於簡單的速度計算)
         lastPoseTime = Date.now();
     },
 
@@ -162,7 +170,9 @@ export const Detectors = {
         UI.toggleHandSupport(handSupport);
 
         // 2. Knee Pressure (Dual Logic)
+        // 2. 膝蓋壓力 (雙重邏輯)
         // Use World Landmarks (3D) for alignment-invariant angle
+        // 使用世界座標 (3D) 來計算不受視角影響的真實角度
         const leftKneeAngle = this.calculateAngle(worldLandmarks[23], worldLandmarks[25], worldLandmarks[27]);
         const rightKneeAngle = this.calculateAngle(worldLandmarks[24], worldLandmarks[26], worldLandmarks[28]);
 
