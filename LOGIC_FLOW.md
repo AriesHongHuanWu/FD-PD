@@ -1,8 +1,20 @@
 # FallGuard AI 判定邏輯流程圖 (Logic Flow)
 
-此文件詳細描述了 `js/detectors.js` 中的核心判定邏輯與數據流向。
+此文件詳細描述了 `js/detectors.js` 中的核心判定邏輯、數據流向，以及系統使用的核心模組。
 
-## 系統核心流程 (Mermaid Flowchart)
+## 1. 使用模組與技術 (Modules & Libraries)
+
+系統整合了多個 AI 模型與演算法來達成精準偵測：
+
+| 模組稱呼 | 函式庫/來源 | 用途說明 | 關鍵程式碼檔案 |
+| :--- | :--- | :--- | :--- |
+| **Pose Detector** | `@mediapipe/pose` | **人體姿態估計**。提供全身 33 個關鍵點的 2D (影像座標) 與 3D (世界座標) 數據。 | `js/detectors.js` |
+| **Object Detector** | `@tensorflow-models/coco-ssd` | **物件偵測**。用於識別環境中的「椅子 (chair)」或「障礙物」，輔助判斷坐姿與環境風險。 | `js/detectors.js` |
+| **Neural Network** | `@tensorflow/tfjs` | TensorFlow 的 WebGL 後端，加速神經網路運算。 | `index.html` (CDN) |
+| **Kalman Filter** | 自定義 (`js/kalman.js`) | **卡爾曼濾波器**。用於平滑化 3D 座標，消除 Webcam 抖動，並預測被遮擋時的軌跡。 | `js/kalman.js` |
+| **3D Visualizer** | `three.js` | **3D 渲染引擎**。將 AI 算出的 3D 骨架渲染到網頁上，提供空間視覺化。 | `js/visualizer.js` |
+
+## 2. 系統核心流程 (Mermaid Flowchart)
 
 ```mermaid
 flowchart TD
@@ -54,7 +66,6 @@ flowchart TD
     end
     
     CalcRisk --> FinalRisk["最終風險指數"]
-    
     CheckFall --> IsFallen{"是否跌倒?"}
     
     FinalRisk -->|Risk > 95%| TriggerFall
@@ -66,51 +77,58 @@ flowchart TD
     AnalyzePose --> UIUpdate["UI 更新: 儀表板/負載條/警告"]
 ```
 
-## 詳細邏輯說明
+## 3. 詳細判定邏輯 (Detailed Logic)
 
-### 1. 預處理 (Pre-processing)
-*   **卡爾曼濾波 (Kalman Filter)**: 為了防止 Webcam 雜訊導致數據跳動，所有的關鍵點座標 (Landmarks) 都會先經過濾波器平滑化。
-*   **可見度檢查 (Visibility Gate)**: 系統會檢查肩膀與下半身的關鍵點可見度。如果平均可見度低於 `0.6`，系統會暫停分析並提示使用者調整位置。
+以下是程式碼中具體的數學判定邏輯：
 
-### 2. 生物力學分析 (AnalyzePose)
+### A. 跌倒判定 (Fall Detection)
+位於 `detectors.js` -> `checkFall()`
 
-#### A. 著地與支撐 (Grounding & Support)
-*   系統計算腳踝 (Ankle) 的 Y 座標。
-*   **判定標準**: 如果腳踝高度在地面線 (最低點) 的一定閾值內 (小腿長度的 30%)，則視為「著地」。
-*   **穩定計時器**: 如果腳的移動速度極低 (< 0.002)，穩定計時器會增加，進一步確認該腳為有效支撐點。
+判定一個人是否跌倒，必須**同時符合**以下兩個條件：
 
-#### B. 坐姿偵測 (Sitting Detection)
-*   利用物件偵測 (Object Detection) 找到的椅子 (Chair/Couch) 邊框。
-*   **判定**: 如果臀部 (Hip) 座標位於椅子邊框內，且高度相符，系統判定為「坐姿」。
-*   **影響**: 坐姿狀態下，膝蓋負載的權重會被忽略。
+1.  **身體角度水平 (Horizontal)**:
+    *   計算 **肩膀中心** 與 **臀部中心** 的連線角度。
+    *   **判定**: `角度 < 45 度` (表示身體接近躺平)。
+2.  **高度過低 (Low Position)**:
+    *   **判定**: `臀部 Y 座標 > 0.5` (在畫面的下半部)。
 
-#### C. 膝蓋負載 (Knee Load)
-*   **資料來源**: 使用 `poseWorldLandmarks` (3D 座標)。
-*   **公式**: 計算 臀部-膝蓋-腳踝 的 3D 夾角。
-*   **壓力值**: 角度越小 (蹲越低)，壓力越大。若偵測到落地衝擊 (Impact)，壓力值會瞬間加乘。
+**觸發機制**:
+*   如果上述條件成立，**或者** `風險指數 >= 95%`。
+*   `fallFrameCount` 會開始累加。
+*   當 `fallFrameCount >= 60` (約持續 2 秒) 時，正式發出紅色警報。
 
-#### D. 脊椎健康 (Spine Health)
-*   計算 肩膀中心 與 臀部中心 的連線角度。
-*   **判定**: 如果前傾角度 > 45 度，標記為 `Poor` (姿勢不良/駝背)。
+### B. 坐姿偵測 (Sitting Detection)
+位於 `detectors.js` -> `analyzePose (Step 2b)`
 
-### 3. 風險評估 (Risk Assessment)
+1.  輸入: `seatObjects` (來自 COCO-SSD 的偵測框)。
+2.  **判定**:
+    *   `hipX` (臀部 X) 位於椅子邊框寬度內。
+    *   `hipY` (臀部 Y) 位於椅子邊框高度內。
+    *   `椅子底部 Y` 與 `腳踝 Y` 的差距 < 0.1 (檢查深度/高度是否合理)。
+3.  **結果**: 若符合，標記 `isSitting = true`，此時膝蓋負載計算會被暫停或忽略。
 
-系統計算一個 **0-100%** 的綜合風險指數 (`riskIndex`)：
+### C. 膝蓋負載計算 (Knee Load)
+位於 `detectors.js` -> `analyzePose` & `calculateAngle`
 
-*   **基礎權重**:
-    *   **膝蓋風險 (30%)**: 基於膝蓋彎曲角度。
-    *   **穩定度風險 (40%)**: 基於重心 (X軸) 偏離雙腳中心的程度。
-    *   **環境風險 (20%)**: 是否有障礙物在腳邊。
-*   **特殊加權**:
-    *   **自由落體 (Freefall)**: 若偵測到急劇的垂直加速度，風險直接設為 100%。
-    *   **脊椎不良**: 風險指數 +10%。
+1.  **3D 角度**: 使用 `Pose World Landmarks` 計算向量夾角。
+    *   `Angle = acos( dot(v1, v2) / (|v1| * |v2|) )`
+    *   其中 v1 = 大腿向量, v2 = 小腿向量。
+2.  **壓力評估**:
+    *   角度越小，壓力越大。
+    *   `壓力值 = (180 - Angle) / 0.9` (線性映射)。
+3.  **與衝擊力結合**:
+    *   若偵測到臀部垂直加速度 (`Impact` > 1.0)，壓力值會乘上此係數。
 
-### 4. 跌倒觸發 (Fall Trigger)
+### D. 綜合風險指數 (Risk Index)
+位於 `detectors.js` -> `analyzePose`
 
-觸發紅色警報需要滿足以下條件之一，並持續 **60 個影格** (約 2 秒，避免誤判)：
+最終風險值 (`0-100%`) 是由多個因子加權總合而成：
 
-1.  **幾何跌倒判定 (`checkFall`)**:
-    *   身體角度 < 45 度 (變成水平)。
-    *   臀部高度 > 0.5 (位置很低)。
-2.  **高風險指數**:
-    *   `riskIndex` >= 95%。
+```javascript
+Risk = (膝蓋風險 * 0.3) + (穩定度風險 * 0.4) + (環境風險 * 0.2)
+```
+
+*   **膝蓋風險**: `max(0, 140 - 有效膝蓋角度)`。
+*   **穩定度風險**: `100 - StabilityScore`。
+*   **環境風險**: 若有障礙物則為 `80`，否則為 `0`。
+*   **自由落體特例**: 若垂直加速度過大 (`accel > 0.015` 且 `dy > 0.02`)，Risk 直接設為 `100`。
