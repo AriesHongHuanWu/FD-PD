@@ -21,39 +21,40 @@ flowchart TD
     Smooth --> VisCheck{"全身可見度 > 0.6?"}
     VisCheck -->|No| LowVisCount["累計低可見度計數"]
     LowVisCount -->|Count > 5| WarnVis["警告: 鏡頭遮擋/太近"]
-    VisCheck -->|Yes| AnalyzePose["進入 AnalyzePose 分析階段"]
+    VisCheck -->|Yes| AnalysisEntry["進入 AnalyzePose 分析階段"]
     
-    subgraph AnalyzePose ["核心分析邏輯"]
+    subgraph AnalysisCore ["核心分析邏輯"]
         direction TB
         
-        AnalyzePose --> Step1["1. 手部支撐偵測"]
+        AnalysisEntry --> Step1["1. 手部支撐偵測"]
         Step1 --> HandSup{"手腕接近膝蓋?"}
         
-        AnalyzePose --> Step2["2. 膝蓋與著地分析 (3D)"]
+        Step1 --> Step2["2. 膝蓋與著地分析 (3D)"]
         Step2 --> KneeAng["計算膝蓋 3D 角度"]
         Step2 --> GroundCheck["判斷腳是否著地 (Y軸高度)"]
         Step2 --> StableCheck["判斷腳是否移動 (速度)"]
         
-        AnalyzePose --> Step3["3. 坐姿偵測"]
+        Step2 --> Step3["3. 坐姿偵測"]
         Step3 --> SitCheck{"臀部在椅子範圍內?"}
         SitCheck -->|Yes| IsSitting["狀態: 坐著 (忽略負載)"]
         SitCheck -->|No| IsStanding["狀態: 站立/活動"]
         
-        AnalyzePose --> Step4["4. 其他指標計算"]
+        Step3 --> Step4["4. 其他指標計算"]
         Step4 --> Impact["衝擊力計算 (臀部垂直加速度)"]
         Step4 --> Stability["穩定度 (重心 vs 支撐底面積)"]
         Step4 --> Spine["脊椎健康 (肩膀-臀部角度)"]
         
-        AnalyzePose --> Step5["5. 風險指數計算"]
+        Step4 --> Step5["5. 風險指數計算"]
         Step5 --> CalcRisk["加權計算: 膝蓋 + 穩定度 + 環境"]
         CalcRisk --> FreeFall{"偵測到自由落體?"}
         FreeFall -->|Yes| MaxRisk["風險指數 = 100%"]
         
-        AnalyzePose --> Step6["6. 跌倒判定"]
+        Step5 --> Step6["6. 跌倒判定"]
         Step6 --> CheckFall{"身體水平且低高度?"}
     end
     
     CalcRisk --> FinalRisk["最終風險指數"]
+    
     CheckFall --> IsFallen{"是否跌倒?"}
     
     FinalRisk -->|Risk > 95%| TriggerFall
